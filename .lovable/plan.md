@@ -66,7 +66,7 @@ projects 1─0..1 project_executive_financials   (F4 + financial.margin_view)
 projects 1─* project_members *─1 roles
 project_members 1─* project_member_permission_overrides *─1 permissions
 projects 1─* project_locations ─* (self, recursive)
-roles *─* permissions (role_permissions)
+roles *─* permissions (role_permissions, PK role_id+permission_id+scope)
 organizations 1─* audit_logs *─0..1 projects
 ```
 
