@@ -116,7 +116,7 @@ GRANT decides whether a role may attempt an operation; RLS decides which rows. B
 | audit_logs | SELECT | `audit.view` scoped to org/project, or Superadmin | no INSERT/UPDATE/DELETE grant; written only by definer triggers/functions |
 | private.platform_admins | none | none from the client (schema not exposed) | none from the client; managed by the one-time bootstrap script or a verified server function |
 
-Security-bearing rows (`organization_members`, `project_members`, overrides, `roles`, `role_permissions`, `project_financials`) therefore have **no client mutation grant at all** in Phase 2 — a normal user cannot even attempt the write, so correctness does not depend on subtle RLS expressions.
+Security-bearing rows (`organization_members`, `project_members`, overrides, `roles`, `role_permissions`, and the three financial tables) therefore have **no client mutation grant at all** in Phase 2 — a normal user cannot even attempt the write, so correctness does not depend on subtle RLS expressions. Each financial table gets its own single-class SELECT policy; no policy covers more than one sensitivity class.
 
 Dependency graph (avoids recursion): policies on business tables call `private.*` SECURITY DEFINER helpers, which read membership tables with RLS bypassed. Membership tables' own policies use only `auth.uid()` comparisons or `private.is_superadmin()` — never a policy on the same table it queries. `private.platform_admins` has no client-reachable policy, so `is_superadmin` cannot recurse.
 
