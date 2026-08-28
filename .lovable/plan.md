@@ -9,7 +9,7 @@ Core backend + real authorization. Replaces the mocked identity/project foundati
 - Two membership planes: organization-level (Director, Contabilidad, Administración) and project-level (Residente, Supervisor, Maestro, etc.). Project role wins inside a project; org role provides global reach.
 - Permissions are a catalog + role mappings + per-project-member overrides. No role-name string checks in code; the client uses permission codes only for UI visibility.
 - Helper logic lives in a non-exposed `private` schema (never added to the Data API exposed schemas), `SECURITY DEFINER` only where RLS recursion/bypass is genuinely required, `set search_path = ''`, every relation and function fully qualified. Privileges are least-privilege **per function** — see section 6.
-- Sensitive money lives only in `project_financials`, gated by financial level **and** an explicit financial permission.
+- Sensitive money is **split by sensitivity class into three tables** — `project_cost_financials` (F2), `project_contract_financials` (F3), `project_executive_financials` (F4) — because RLS is row-level, not column-level. Each has its own policy requiring the matching financial level **and** an explicit financial permission.
 - **Platform administration is a third, independent plane** (`private.platform_admins`), unrelated to business role and financial level. In Phase 2 all sensitive administrative writes are Superadmin-only. See section 2b.
 
 ### 2b. Platform Superadmin layer
