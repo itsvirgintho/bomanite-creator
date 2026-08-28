@@ -13,12 +13,12 @@ export const Route = createFileRoute("/proyecto/$projectId/")({
 /** Home dentro del proyecto, adaptado al rol activo. */
 function ProjectHome() {
   const { activeProject } = useProjectContext();
-  const { role, hydrated } = useSession();
+  const { demoRole, hydrated } = useSession();
 
   if (!hydrated) return <LoadingState rows={3} />;
   if (!activeProject) return <EmptyState title="Proyecto no disponible" />;
 
-  switch (role) {
+  switch (demoRole) {
     case "maestro":
       return <MaestroHome project={activeProject} />;
     case "director_general":
