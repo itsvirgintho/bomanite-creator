@@ -16,6 +16,13 @@ import { Route as PerfilRouteImport } from './routes/perfil'
 import { Route as PortafolioRouteImport } from './routes/portafolio'
 import { Route as ProyectoProjectIdRouteImport } from './routes/proyecto.$projectId'
 import { Route as ProyectoProjectIdIndexRouteImport } from './routes/proyecto.$projectId.index'
+import { Route as ProyectoProjectIdAvanceRouteImport } from './routes/proyecto.$projectId.avance'
+import { Route as ProyectoProjectIdEstimacionesRouteImport } from './routes/proyecto.$projectId.estimaciones'
+import { Route as ProyectoProjectIdGastosRouteImport } from './routes/proyecto.$projectId.gastos'
+import { Route as ProyectoProjectIdIncidenciasRouteImport } from './routes/proyecto.$projectId.incidencias'
+import { Route as ProyectoProjectIdPlanosRouteImport } from './routes/proyecto.$projectId.planos'
+import { Route as ProyectoProjectIdProgramaRouteImport } from './routes/proyecto.$projectId.programa'
+import { Route as ProyectoProjectIdReportesRouteImport } from './routes/proyecto.$projectId.reportes'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -52,6 +59,45 @@ const ProyectoProjectIdIndexRoute = ProyectoProjectIdIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ProyectoProjectIdRoute,
 } as any)
+const ProyectoProjectIdAvanceRoute = ProyectoProjectIdAvanceRouteImport.update({
+  id: '/avance',
+  path: '/avance',
+  getParentRoute: () => ProyectoProjectIdRoute,
+} as any)
+const ProyectoProjectIdEstimacionesRoute =
+  ProyectoProjectIdEstimacionesRouteImport.update({
+    id: '/estimaciones',
+    path: '/estimaciones',
+    getParentRoute: () => ProyectoProjectIdRoute,
+  } as any)
+const ProyectoProjectIdGastosRoute = ProyectoProjectIdGastosRouteImport.update({
+  id: '/gastos',
+  path: '/gastos',
+  getParentRoute: () => ProyectoProjectIdRoute,
+} as any)
+const ProyectoProjectIdIncidenciasRoute =
+  ProyectoProjectIdIncidenciasRouteImport.update({
+    id: '/incidencias',
+    path: '/incidencias',
+    getParentRoute: () => ProyectoProjectIdRoute,
+  } as any)
+const ProyectoProjectIdPlanosRoute = ProyectoProjectIdPlanosRouteImport.update({
+  id: '/planos',
+  path: '/planos',
+  getParentRoute: () => ProyectoProjectIdRoute,
+} as any)
+const ProyectoProjectIdProgramaRoute =
+  ProyectoProjectIdProgramaRouteImport.update({
+    id: '/programa',
+    path: '/programa',
+    getParentRoute: () => ProyectoProjectIdRoute,
+  } as any)
+const ProyectoProjectIdReportesRoute =
+  ProyectoProjectIdReportesRouteImport.update({
+    id: '/reportes',
+    path: '/reportes',
+    getParentRoute: () => ProyectoProjectIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -60,6 +106,13 @@ export interface FileRoutesByFullPath {
   '/perfil': typeof PerfilRoute
   '/portafolio': typeof PortafolioRoute
   '/proyecto/$projectId': typeof ProyectoProjectIdRouteWithChildren
+  '/proyecto/$projectId/avance': typeof ProyectoProjectIdAvanceRoute
+  '/proyecto/$projectId/estimaciones': typeof ProyectoProjectIdEstimacionesRoute
+  '/proyecto/$projectId/gastos': typeof ProyectoProjectIdGastosRoute
+  '/proyecto/$projectId/incidencias': typeof ProyectoProjectIdIncidenciasRoute
+  '/proyecto/$projectId/planos': typeof ProyectoProjectIdPlanosRoute
+  '/proyecto/$projectId/programa': typeof ProyectoProjectIdProgramaRoute
+  '/proyecto/$projectId/reportes': typeof ProyectoProjectIdReportesRoute
   '/proyecto/$projectId/': typeof ProyectoProjectIdIndexRoute
 }
 export interface FileRoutesByTo {
@@ -68,6 +121,13 @@ export interface FileRoutesByTo {
   '/contabilidad': typeof ContabilidadRoute
   '/perfil': typeof PerfilRoute
   '/portafolio': typeof PortafolioRoute
+  '/proyecto/$projectId/avance': typeof ProyectoProjectIdAvanceRoute
+  '/proyecto/$projectId/estimaciones': typeof ProyectoProjectIdEstimacionesRoute
+  '/proyecto/$projectId/gastos': typeof ProyectoProjectIdGastosRoute
+  '/proyecto/$projectId/incidencias': typeof ProyectoProjectIdIncidenciasRoute
+  '/proyecto/$projectId/planos': typeof ProyectoProjectIdPlanosRoute
+  '/proyecto/$projectId/programa': typeof ProyectoProjectIdProgramaRoute
+  '/proyecto/$projectId/reportes': typeof ProyectoProjectIdReportesRoute
   '/proyecto/$projectId': typeof ProyectoProjectIdIndexRoute
 }
 export interface FileRoutesById {
@@ -78,6 +138,13 @@ export interface FileRoutesById {
   '/perfil': typeof PerfilRoute
   '/portafolio': typeof PortafolioRoute
   '/proyecto/$projectId': typeof ProyectoProjectIdRouteWithChildren
+  '/proyecto/$projectId/avance': typeof ProyectoProjectIdAvanceRoute
+  '/proyecto/$projectId/estimaciones': typeof ProyectoProjectIdEstimacionesRoute
+  '/proyecto/$projectId/gastos': typeof ProyectoProjectIdGastosRoute
+  '/proyecto/$projectId/incidencias': typeof ProyectoProjectIdIncidenciasRoute
+  '/proyecto/$projectId/planos': typeof ProyectoProjectIdPlanosRoute
+  '/proyecto/$projectId/programa': typeof ProyectoProjectIdProgramaRoute
+  '/proyecto/$projectId/reportes': typeof ProyectoProjectIdReportesRoute
   '/proyecto/$projectId/': typeof ProyectoProjectIdIndexRoute
 }
 export interface FileRouteTypes {
@@ -89,6 +156,13 @@ export interface FileRouteTypes {
     | '/perfil'
     | '/portafolio'
     | '/proyecto/$projectId'
+    | '/proyecto/$projectId/avance'
+    | '/proyecto/$projectId/estimaciones'
+    | '/proyecto/$projectId/gastos'
+    | '/proyecto/$projectId/incidencias'
+    | '/proyecto/$projectId/planos'
+    | '/proyecto/$projectId/programa'
+    | '/proyecto/$projectId/reportes'
     | '/proyecto/$projectId/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -97,6 +171,13 @@ export interface FileRouteTypes {
     | '/contabilidad'
     | '/perfil'
     | '/portafolio'
+    | '/proyecto/$projectId/avance'
+    | '/proyecto/$projectId/estimaciones'
+    | '/proyecto/$projectId/gastos'
+    | '/proyecto/$projectId/incidencias'
+    | '/proyecto/$projectId/planos'
+    | '/proyecto/$projectId/programa'
+    | '/proyecto/$projectId/reportes'
     | '/proyecto/$projectId'
   id:
     | '__root__'
@@ -106,6 +187,13 @@ export interface FileRouteTypes {
     | '/perfil'
     | '/portafolio'
     | '/proyecto/$projectId'
+    | '/proyecto/$projectId/avance'
+    | '/proyecto/$projectId/estimaciones'
+    | '/proyecto/$projectId/gastos'
+    | '/proyecto/$projectId/incidencias'
+    | '/proyecto/$projectId/planos'
+    | '/proyecto/$projectId/programa'
+    | '/proyecto/$projectId/reportes'
     | '/proyecto/$projectId/'
   fileRoutesById: FileRoutesById
 }
@@ -169,14 +257,77 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProyectoProjectIdIndexRouteImport
       parentRoute: typeof ProyectoProjectIdRoute
     }
+    '/proyecto/$projectId/avance': {
+      id: '/proyecto/$projectId/avance'
+      path: '/avance'
+      fullPath: '/proyecto/$projectId/avance'
+      preLoaderRoute: typeof ProyectoProjectIdAvanceRouteImport
+      parentRoute: typeof ProyectoProjectIdRoute
+    }
+    '/proyecto/$projectId/estimaciones': {
+      id: '/proyecto/$projectId/estimaciones'
+      path: '/estimaciones'
+      fullPath: '/proyecto/$projectId/estimaciones'
+      preLoaderRoute: typeof ProyectoProjectIdEstimacionesRouteImport
+      parentRoute: typeof ProyectoProjectIdRoute
+    }
+    '/proyecto/$projectId/gastos': {
+      id: '/proyecto/$projectId/gastos'
+      path: '/gastos'
+      fullPath: '/proyecto/$projectId/gastos'
+      preLoaderRoute: typeof ProyectoProjectIdGastosRouteImport
+      parentRoute: typeof ProyectoProjectIdRoute
+    }
+    '/proyecto/$projectId/incidencias': {
+      id: '/proyecto/$projectId/incidencias'
+      path: '/incidencias'
+      fullPath: '/proyecto/$projectId/incidencias'
+      preLoaderRoute: typeof ProyectoProjectIdIncidenciasRouteImport
+      parentRoute: typeof ProyectoProjectIdRoute
+    }
+    '/proyecto/$projectId/planos': {
+      id: '/proyecto/$projectId/planos'
+      path: '/planos'
+      fullPath: '/proyecto/$projectId/planos'
+      preLoaderRoute: typeof ProyectoProjectIdPlanosRouteImport
+      parentRoute: typeof ProyectoProjectIdRoute
+    }
+    '/proyecto/$projectId/programa': {
+      id: '/proyecto/$projectId/programa'
+      path: '/programa'
+      fullPath: '/proyecto/$projectId/programa'
+      preLoaderRoute: typeof ProyectoProjectIdProgramaRouteImport
+      parentRoute: typeof ProyectoProjectIdRoute
+    }
+    '/proyecto/$projectId/reportes': {
+      id: '/proyecto/$projectId/reportes'
+      path: '/reportes'
+      fullPath: '/proyecto/$projectId/reportes'
+      preLoaderRoute: typeof ProyectoProjectIdReportesRouteImport
+      parentRoute: typeof ProyectoProjectIdRoute
+    }
   }
 }
 
 interface ProyectoProjectIdRouteChildren {
+  ProyectoProjectIdAvanceRoute: typeof ProyectoProjectIdAvanceRoute
+  ProyectoProjectIdEstimacionesRoute: typeof ProyectoProjectIdEstimacionesRoute
+  ProyectoProjectIdGastosRoute: typeof ProyectoProjectIdGastosRoute
+  ProyectoProjectIdIncidenciasRoute: typeof ProyectoProjectIdIncidenciasRoute
+  ProyectoProjectIdPlanosRoute: typeof ProyectoProjectIdPlanosRoute
+  ProyectoProjectIdProgramaRoute: typeof ProyectoProjectIdProgramaRoute
+  ProyectoProjectIdReportesRoute: typeof ProyectoProjectIdReportesRoute
   ProyectoProjectIdIndexRoute: typeof ProyectoProjectIdIndexRoute
 }
 
 const ProyectoProjectIdRouteChildren: ProyectoProjectIdRouteChildren = {
+  ProyectoProjectIdAvanceRoute: ProyectoProjectIdAvanceRoute,
+  ProyectoProjectIdEstimacionesRoute: ProyectoProjectIdEstimacionesRoute,
+  ProyectoProjectIdGastosRoute: ProyectoProjectIdGastosRoute,
+  ProyectoProjectIdIncidenciasRoute: ProyectoProjectIdIncidenciasRoute,
+  ProyectoProjectIdPlanosRoute: ProyectoProjectIdPlanosRoute,
+  ProyectoProjectIdProgramaRoute: ProyectoProjectIdProgramaRoute,
+  ProyectoProjectIdReportesRoute: ProyectoProjectIdReportesRoute,
   ProyectoProjectIdIndexRoute: ProyectoProjectIdIndexRoute,
 }
 
