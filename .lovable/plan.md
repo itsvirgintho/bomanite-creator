@@ -86,11 +86,14 @@ Scope lives on `role_permissions`, not on `permissions`. A mapping is only honor
    - base = project membership `financial_level` when an active membership exists, else 0;
    - the organization membership level supplements it **only when the org role holds the organization-scoped authority covering that data class** (i.e. path B applies to P and the org role holds the required `financial.*` permission at organization scope);
    - otherwise `effective = project level`. Never a blanket `max(org, project)`; a passive membership (role NULL, F0) contributes nothing.
-6. Financial reads are per sensitivity table, each with its own policy — no single policy spans classes:
-   - `project_cost_financials`: project visibility (A or B) **and** effective level >= 2 **and** `financial.cost_view`.
-   - `project_contract_financials`: project visibility **and** effective level >= 3 **and** `financial.contract_view`.
-   - `project_executive_financials`: project visibility **and** effective level >= 4 **and** `financial.margin_view`.
-   Consequences: Cecy (Contabilidad F2 + accounting codes) reads neither contract nor executive rows; Almacén (F0/F1) reads none of the three; Diego Residente (F2) reads cost rows only if his project role explicitly includes `financial.cost_view`; Miguel (F3) reads cost/contract only with the explicit corresponding permissions; Pablo (F4) reads all three only through his explicit role permissions plus level; Superadmin platform status alone grants nothing on these tables.
+6. Financial reads are per sensitivity table, each with its own policy — no single policy spans classes. Each requires visibility, level and the financial permission **through the matching access path**:
+   - Direct project path: active project membership + the code mapped at `scope = 'project'` for the project role.
+   - Organization/global path: active org membership with non-null role + the code mapped at `scope = 'organization'`.
+   - `project_cost_financials`: visibility **and** effective level >= 2 **and** `financial.cost_view` on the same path.
+   - `project_contract_financials`: visibility **and** effective level >= 3 **and** `financial.contract_view` on the same path.
+   - `project_executive_financials`: visibility **and** effective level >= 4 **and** `financial.margin_view` on the same path.
+   The two paths are evaluated separately and never merged ambiguously. Consequences: Cecy (Contabilidad F2 + organization-scoped accounting codes) reads neither contract nor executive rows; Almacén (F0/F1) reads none of the three; Diego Residente (F2) reads cost rows only if his project role has `financial.cost_view` at project scope; Miguel (F3) reads cost/contract only with the explicit project-scoped permissions on assigned projects; Pablo (F4) reads all three through organization-scoped mappings plus level; Superadmin platform status alone grants nothing on these tables.
+
 7. Organization scoping is explicit: the organization_id always comes from the protected resource or from the caller's membership row passed into the helper. There is no ambiguous `private.current_org()`; if it is ever reintroduced it must raise on more than one active organization membership rather than silently picking the first.
 
 
