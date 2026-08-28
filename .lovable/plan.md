@@ -1,41 +1,64 @@
-# Foundation Phase 2 — Batch 1: Atomicity Verification Report (execution held)
+# Foundation Phase 2 — Batch 1: Create versioned Supabase migration file
 
-Batch 1 was NOT executed. The approved SQL is unchanged. Option A (explicit `BEGIN`/`COMMIT` wrapper) is withdrawn — your objection is correct: PostgreSQL has no nested transactions, and a `COMMIT` inside a runner-owned transaction can close that transaction early and corrupt migration-history bookkeeping.
+## Objective
+Create exactly one timestamped Supabase migration file in the repository containing the approved Batch 1 SQL, with no semantic changes and no remote database execution.
 
-## Preflight (read-only) — PASSED, unchanged
+## File to create
+`supabase/migrations/<timestamp>_foundation_phase2_batch1_core.sql`
 
-Catalog query returned zero rows: no `private` schema, no `public.organizations` / `business_units` / `profiles`, no `private.set_updated_at()` / `private.handle_new_auth_user()`, no `profiles_set_updated_at` / `on_auth_user_created` trigger, and no other user tables or views in `public`. No conflicts with the strict `CREATE` statements.
+where `<timestamp>` is the current UTC timestamp in Supabase migration format `YYYYMMDDHHMMSS`.
 
-## Atomicity verification — NOT ESTABLISHED
+## Directory to create (if absent)
+`supabase/migrations/`
 
-Neither guarantee A nor guarantee B can be confirmed.
+## Contents
+The file will contain the approved Batch 1 SQL exactly as frozen in the previous plan, including:
 
-What was actually inspected:
+- `CREATE SCHEMA private;` and privilege revocation on it.
+- `CREATE FUNCTION private.set_updated_at();` (non-security definer, `search_path=''`).
+- Tables:
+  - `public.organizations`
+  - `public.business_units`
+  - `public.profiles`
+- FKs:
+  - `business_units.organization_id → organizations.id ON DELETE RESTRICT`
+  - `profiles.id → auth.users.id ON DELETE CASCADE`
+- Triggers:
+  - `profiles_set_updated_at` on `public.profiles`
+  - `on_auth_user_created` on `auth.users`
+- Function `private.handle_new_auth_user()` (security definer, `search_path=''`).
+- Indexes:
+  - PK indexes (created automatically by PK constraints)
+  - `business_units_org_code_key` via `UNIQUE (organization_id, code)`
+  - partial unique index `profiles_employee_code_key` where `employee_code IS NOT NULL`
+- Security lockdown:
+  - RLS enabled immediately on all three tables
+  - Zero policies
+  - No table privileges for `anon`, `authenticated`, or `PUBLIC`
+  - No `USAGE` on schema `private` for `anon`/`authenticated`
+  - No `EXECUTE` on `private.set_updated_at()` or `private.handle_new_auth_user()` for `PUBLIC`/`anon`/`authenticated`
+  - `service_role` granted `ALL` on the three tables
 
-- The project repository. It contains only `supabase/config.toml`; there is no `supabase/migrations/` directory, no migration runner code, no CLI wrapper and no npm script that applies migrations. Nothing in the checked-out project defines or executes the migration.
-- The migration tool contract exposed to me. It accepts a SQL string plus a description and returns a single applied/failed result. Its documented contract says nothing about PostgreSQL transaction boundaries, wire protocol, statement splitting, or where migration-history recording happens.
-- Direct database access. The `PG*`-based path is read-only (select/insert), so it cannot be used to observe the runner, and observing the runner's own session behaviour is not possible after the fact.
+## What will NOT be in the file
+- `BEGIN` / `COMMIT`
+- `IF NOT EXISTS`
+- `CREATE OR REPLACE`
+- Seed data, users, roles, permissions, projects, financial tables, locations, audit, Superadmin helpers, additional indexes/policies
+- Pipeline-incompatible statements (`CREATE INDEX CONCURRENTLY`, `REINDEX`, `VACUUM`, `ALTER SYSTEM`, `CLUSTER`)
 
-Answers to your specific questions:
+## What will NOT happen
+- No `supabase db push`
+- No `supabase db reset --linked`
+- No remote migration tool
+- No SQL execution against the Supabase project
+- No modification to `supabase/config.toml` unless a migration-directory config change is strictly required
+- No other repository files changed
+- No Auth users or seed rows created
 
-- **Model A or B in use:** cannot be determined. The runner is a platform-side service; its implementation is not present in this project and is not exposed to me.
-- **Concrete evidence:** none that meets your bar. Everything available is of the "one submission, one result" class, which you have correctly ruled out as insufficient.
-- **Migration-history recording inside the same transaction:** unknown.
-- **Statements split and individually committed:** unknown. I cannot rule it out.
-- **Simple-query vs extended-query protocol:** unknown; not exposed.
-
-Per your instruction, this is a STOP condition. No execution.
-
-## Options to resolve (your call)
-
-**Option 1 — Platform confirmation.** Obtain the transaction contract for the Lovable/Supabase migration runner from the platform side (docs or support) and record it as a project decision. If it states A or B, Batch 1 executes as-is with no SQL change.
-
-**Option 2 — Empirical probe migration (state-changing, throwaway).** Apply one disposable probe migration containing two statements where the second is guaranteed to fail, e.g. create a table `public._atomicity_probe` then `SELECT 1/0`. Then read the catalog: if `_atomicity_probe` does not exist, the runner rolled the whole file back and guarantee B holds; if it exists, the runner is non-atomic and the object is dropped in a second cleanup migration. This proves the behaviour empirically without touching Batch 1 SQL, at the cost of two throwaway migrations in history. Requires your explicit approval because it writes to the database.
-
-**Option 3 — Accept non-atomic execution explicitly.** Execute the approved SQL unchanged, accepting that a mid-file failure could leave partial objects. The preflight shows a completely empty target, so recovery is a clean, fully enumerable teardown of exactly the Batch 1 object list. Requires you to accept the partial-state risk in writing.
-
-**Option 4 — Continue holding.** No execution until Option 1 or 2 resolves the question.
-
-## Unchanged scope reminder
-
-When execution is authorised, Batch 1 creates only: schema `private`; `private.set_updated_at()` and `private.handle_new_auth_user()`; `public.organizations`, `public.business_units`, `public.profiles`; triggers `profiles_set_updated_at` and `on_auth_user_created`; the approved constraints; only the indexes `organizations_pkey`, `business_units_pkey`, `business_units_org_code_key`, `profiles_pkey`, partial `profiles_employee_code_key`; and the full lockdown (RLS on, zero policies, no `anon`/`authenticated`/`PUBLIC` privileges, no `private` USAGE for `anon`/`authenticated`, no function EXECUTE for `PUBLIC`/`anon`/`authenticated`, `service_role` server-side privileges). The approved `profiles.id → auth.users(id) ON DELETE CASCADE` stays exactly as approved. No seeds, no test users, no Batch 2, no application changes.
+## Deliverables after creation
+- Exact migration filename
+- Confirmation that contents are byte-equivalent in SQL semantics to the approved Batch 1
+- Confirmation that `supabase/config.toml` is unchanged
+- Confirmation that no other repository files were changed
+- Confirmation that no database calls were made
+- Confirmation that no migration was recorded remotely
