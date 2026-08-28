@@ -160,13 +160,18 @@ Supabase Free, current Lovable plan, GitHub Free only. No new paid services and 
 
 ## 13. Acceptance checklist
 
-- All 13 tables exist with PKs, FKs, uniques, checks, indexes and restrictive deletes.
-- RLS enabled and explicit GRANTs on every table; `anon` cannot read any business data.
+- All 13 public tables plus `private.platform_admins` exist with PKs, FKs, uniques, checks, indexes and restrictive deletes.
+- RLS enabled and explicit GRANTs on every public table; `anon` cannot read any business data; `private.platform_admins` is not reachable from the Data API.
 - Helper functions live in `private`, are SECURITY DEFINER with empty search_path, and are not exposed via the Data API.
+- Superadmin is modeled independently of business role and financial level; F4 and Director General grant no administration.
+- No BYPASSRLS database role is used from the browser; no service-role credential appears in frontend code.
 - Profile auto-created for dashboard-created auth users.
 - Real login, logout and password reset work; no sign-up UI exists.
 - Role/permission/financial-level resolution comes from the database, not from role-name checks in the client.
+- Two distinct real Supabase accounts (Superadmin and Residente) exist and pass their matrix rows; all privilege-escalation attempts fail.
 - Every item of the security test matrix passes.
+- Navigation config can expose an admin group to Superadmins, but no administration module is built.
 - Phase 1 shell, routes and components still render for all four roles with real data.
 - Demo session/role switcher removed only after real auth is confirmed.
 - No operational module tables created; typecheck and build clean.
+
