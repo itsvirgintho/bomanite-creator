@@ -182,15 +182,28 @@ Staged migration, demo system stays until each stage is green:
 5. `ProjectSwitcher` and `/proyecto/$projectId` load only authorized projects; an unauthorized/unknown id renders "Proyecto no disponible o sin acceso" (no content leak, no distinction fishing).
 6. Once verified, remove `DemoRoleSwitcher`, demo users/projects from `src/mocks`, and the mock branches — keeping only clearly labeled demo data for still-mocked operational widgets, or removing the "Datos de demostración" notice where data is now real.
 
-## 10. Security test matrix
+## 11. Navigation readiness (no screens built)
+
+`src/config/navigation.ts` gains permission-driven, not role-name-driven, entries that stay hidden until the real access context reports the codes: project materials `/proyecto/$projectId/materiales` (shown with `material_request.view_own` or `.view_project`) and global warehouse `/almacen` (shown with `warehouse.request_view`), plus the Superadmin `administracion` group. Route files and module screens are NOT created in Phase 2; the config entries stay inert until the modules exist.
+
+Role visibility additions for the new real roles: Superintendente de Obra sees project operational destinations plus approval-oriented entries later; Almacén sees only global warehouse plus profile — no portfolio, no estimates, no financial destinations.
+
+## 12. Security test matrix
 
 Business access: Director reads all org projects and financials; Residente reads assigned project, 0 rows for unrelated project; Maestro assigned project only and `project_financials` returns 0 rows; Contabilidad cross-project financial reads at its level; Anonymous 0 rows everywhere. Plus expired membership → no access; inactive membership → no access; override deny removes a role-granted permission; override allow grants one; unauthorized project URL renders the unavailable state; direct PostgREST query with a known UUID returns empty.
+
+New role tests:
+- Cecy (Contabilidad, F2): holds the accounting permission codes; `project_financials` contract/margin reads return 0 rows at F2; holds no warehouse or shipment permission.
+- Warehouse user (Almacén, F0/F1): holds only warehouse/shipment codes; `project_financials` returns 0 rows; cannot read contract value, unit prices, margin or collections; cannot approve material requests.
+- Superintendente (Miguel Ángel Tobón, F3): holds review/approve/reject/return codes; no warehouse codes; no platform administration.
+- Maestro (Ricardo, F1): requester/receiver codes only; no approval, warehouse or financial codes.
 
 Platform administration (run with the two real accounts):
 - Account A (Superadmin): can perform permitted administrative writes through the approved protected paths; sees the administration navigation; reads business/financial data only through its separately assigned Director General + F4 membership, except the documented audit-read policy.
 - Director non-Superadmin: F4 grants no administration; cannot change roles, permissions, memberships or financial levels.
 - Account B (Residente): `private.platform_admins` is unreadable (function/table not in the API); admin navigation hidden and admin URLs render unauthorized; cannot assign roles, modify memberships, change financial levels or view unrelated projects; direct Supabase API attempts blocked by grants/RLS.
-- Privilege escalation (all must fail): insert self into platform_admins; modify own organization_members row; change own role_id; raise own financial_level; insert a project_members row for self; insert a permission override for self.
+- Privilege escalation (all must fail): insert self into platform_admins; modify own organization_members row; change own role_id; raise own financial_level; insert a project_members row for self; insert a permission override for self; grant self any material_request approval or warehouse permission.
+
 
 
 ## 11. Risks and edge cases
