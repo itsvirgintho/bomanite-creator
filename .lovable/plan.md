@@ -69,15 +69,28 @@ roles *─* permissions (role_permissions)
 organizations 1─* audit_logs *─0..1 projects
 ```
 
-## 4. Access resolution algorithm
+## 4. Access resolution algorithm (deterministic, scope-aware)
 
-1. `uid = auth.uid()`; require an active profile.
-2. Org context: active `organization_members` row (starts_at <= now, ends_at null or > now) → org role + org financial_level.
-3. Project context: active `project_members` row for that project → project role + project financial_level.
-4. Effective permission for (user, project) = project role permissions ∪ org role permissions, then apply overrides valid at now(): explicit `allowed = false` wins over any grant; `allowed = true` adds.
-5. Project visibility = has an active project membership OR org role holds `project.view` at org scope (Director, Contabilidad).
-6. Financial: effective_level = max(org level, project level). Every `project_financials` read requires **both** a sufficient level **and** an explicit permission: contract fields = F3 + `financial.contract_view`; cost fields = F2 + `financial.cost_view`; margin and collections = F4 + `financial.margin_view` / `financial.collection_view`. Accounting-document permissions (Cecy's bundle) never imply any of these, so Contabilidad at F2 sees no contract or margin data, and Almacén at F0/F1 receives zero `project_financials` rows.
+Permissions carry a `scope` (`platform` | `organization` | `project`). A mapping is only honored on the plane matching its scope. **An organization role holding a project-scoped permission never converts it into organization-wide project access.**
+
+1. `uid = auth.uid()`; require `profiles.is_active = true`. Otherwise nothing is granted.
+2. Org plane: the active `organization_members` row (starts_at <= now, ends_at null or > now, is_active). If `role_id IS NULL`, the user is merely a DFN member: **zero organization permissions, organization financial level treated as F0**, no project reach. If `role_id` is set, org permissions = role permissions **whose scope = 'organization'** (plus `platform`-scoped codes only if ever mapped, which Phase 2 does not do).
+3. Project plane, per project P: the active `project_members` row for P. Project permissions = role permissions **whose scope = 'project'**, then apply overrides for that membership valid at now(): `allowed = false` wins over any grant; `allowed = true` adds. Overrides affect the project set only.
+4. Project visibility is two distinct, non-interchangeable paths:
+   - **A. Direct project access** — an active `project_members` row for P (with the relevant project permission for the action).
+   - **B. Organization portfolio access** — an explicit organization-scoped permission such as `portfolio.view` held by an org role (Director General, authorized Contabilidad, authorized management). This is deliberately assigned, never implied by a job title.
+   Residente, Maestro, Supervisor and project-scoped Superintendente therefore see only their assigned projects; an organization membership alone never creates project access.
+5. Effective financial level for project P:
+   - base = project membership `financial_level` when an active membership exists, else 0;
+   - the organization membership level supplements it **only when the org role holds the organization-scoped authority covering that data class** (i.e. path B applies to P and the org role holds the required `financial.*` permission at organization scope);
+   - otherwise `effective = project level`. Never a blanket `max(org, project)`; a passive membership (role NULL, F0) contributes nothing.
+6. Financial reads are per sensitivity table, each with its own policy — no single policy spans classes:
+   - `project_cost_financials`: project visibility (A or B) **and** effective level >= 2 **and** `financial.cost_view`.
+   - `project_contract_financials`: project visibility **and** effective level >= 3 **and** `financial.contract_view`.
+   - `project_executive_financials`: project visibility **and** effective level >= 4 **and** `financial.margin_view`.
+   Consequences: Cecy (Contabilidad F2 + accounting codes) reads neither contract nor executive rows; Almacén (F0/F1) reads none of the three; Diego Residente (F2) reads cost rows only if his project role explicitly includes `financial.cost_view`; Miguel (F3) reads cost/contract only with the explicit corresponding permissions; Pablo (F4) reads all three only through his explicit role permissions plus level; Superadmin platform status alone grants nothing on these tables.
 7. Organization scoping is explicit: the organization_id always comes from the protected resource or from the caller's membership row passed into the helper. There is no ambiguous `private.current_org()`; if it is ever reintroduced it must raise on more than one active organization membership rather than silently picking the first.
+
 
 ## 5. GRANTs and RLS per table
 
