@@ -20,23 +20,51 @@ interface AppShellProps {
 }
 
 export function AppShell({ children, contextLabel }: AppShellProps) {
-  const { user, role, isSignedIn, hydrated } = useSession();
+  const { role } = useSession();
+  const {
+    session,
+    initializing,
+    authorizationContext,
+    loadingContext,
+    contextError,
+    refreshAuthorizationContext,
+  } = useAuth();
   const { activeProject } = useProjectContext();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (hydrated && !isSignedIn) {
+    if (!initializing && !session) {
       void navigate({ to: "/auth", replace: true });
     }
-  }, [hydrated, isSignedIn, navigate]);
+  }, [initializing, session, navigate]);
 
-  if (!hydrated || !isSignedIn) {
+  if (initializing || !session || (loadingContext && !authorizationContext)) {
     return (
       <div className="mx-auto max-w-3xl p-6">
         <LoadingState rows={2} />
       </div>
     );
   }
+
+  if (!authorizationContext) {
+    return (
+      <div className="mx-auto max-w-md p-6 text-center">
+        <h1 className="text-base font-semibold">No pudimos cargar tus permisos</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {contextError ?? "Intenta de nuevo en unos segundos."}
+        </p>
+        <button
+          type="button"
+          onClick={() => void refreshAuthorizationContext()}
+          className="mt-4 min-h-11 rounded-md border border-border-strong px-4 text-sm font-medium hover:bg-muted"
+        >
+          Reintentar
+        </button>
+      </div>
+    );
+  }
+
+  const displayName = profileDisplayName(authorizationContext.profile);
 
   const label = contextLabel ?? activeProject?.name ?? "Vista global";
 
