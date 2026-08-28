@@ -133,7 +133,9 @@ Each step is a separate migration presented for approval. The identity bootstrap
 
 ## 8. Permission catalog (including Materials/Warehouse readiness)
 
-The catalog is seeded in full in Phase 2 even though several codes have no screen yet. Categories: `project`, `user`, `audit`, `financial`, `expense`, `vendor_invoice`, `client_invoice`, `reimbursement`, `material_request`, `warehouse`, `shipment`, `material_receipt`, `material_issue`.
+The catalog is seeded in full in Phase 2 even though several codes have no screen yet. Categories: `project`, `admin`, `audit`, `financial`, `expense`, `vendor_invoice`, `client_invoice`, `reimbursement`, `material_request`, `warehouse`, `shipment`, `material_receipt`, `material_issue`.
+
+Administration codes are seeded but mapped to **no role** in Phase 2 (Superadmin-only writes cover these operations for now): `admin.organization.manage`, `admin.business_unit.manage`, `admin.user.manage`, `admin.membership.manage`, `admin.project.manage`, `admin.role.manage`, `admin.permission.manage`. The generic `user.manage` key is retired as an authorization key. Financial codes are explicit per field group: `financial.cost_view` (F2), `financial.contract_view` (F3), `financial.margin_view` (F4), `financial.collection_view` (F4).
 
 Accounting/administrative codes (granular, so Contabilidad does not need a high financial level):
 `expense.view_all`, `expense.invoice_manage`, `expense.payment_view`, `vendor_invoice.view`, `vendor_invoice.create`, `vendor_invoice.validate`, `client_invoice.view`, `client_invoice.manage`, `reimbursement.view`, `reimbursement.update`.
