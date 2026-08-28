@@ -73,3 +73,30 @@ export function profileDisplayName(profile: AuthzProfile | null | undefined): st
   const name = [profile.first_name, profile.last_name].filter(Boolean).join(" ").trim();
   return name.length > 0 ? name : "Usuario";
 }
+
+/**
+ * Role label for IDENTITY DISPLAY ONLY. Never use this for authorization
+ * decisions or permission inference — authorization lives in the database.
+ *
+ * Priority: direct membership role of the active project → first organization
+ * membership role → "Superadministrador" if is_superadmin → null (no badge).
+ */
+export function roleDisplayLabel(
+  context: AuthorizationContext | null | undefined,
+  activeProjectId?: string | null,
+): string | null {
+  if (!context) return null;
+
+  if (activeProjectId) {
+    const project = context.projects.find((p) => p.id === activeProjectId);
+    const role = project?.direct_membership?.role;
+    if (role) return role.name || role.code;
+  }
+
+  const orgRole = context.organizations.find((o) => o.membership.role)?.membership.role;
+  if (orgRole) return orgRole.name || orgRole.code;
+
+  if (context.is_superadmin) return "Superadministrador";
+
+  return null;
+}
