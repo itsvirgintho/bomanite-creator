@@ -156,7 +156,7 @@ No views are created in Phase 2. Any future view exposed to `authenticated` must
 9. audit_logs + audit write function/triggers.
 10. `private.platform_admins`.
 11. private helper functions (including `is_superadmin`) + `public.update_own_profile`.
-12. Explicit REVOKE/GRANT statements (schema USAGE, per-function EXECUTE, per-table privileges) and RLS policies for all of the above, including the Superadmin-only administrative write policies.
+12. Explicit REVOKE/GRANT statements (schema USAGE, per-function EXECUTE, SELECT-only table privileges for `authenticated`) and RLS policies for all of the above. No client write grants are issued in this phase.
 13. Seed reference data (12 roles, permission catalog, role mappings) — no personal identifiers.
 
 Each step is a separate migration presented for approval. The identity bootstrap is NOT a migration: it is a separate one-time reviewed script (section 9).
