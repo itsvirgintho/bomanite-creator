@@ -69,32 +69,48 @@ organizations 1─* audit_logs *─0..1 projects
 3. Project context: active `project_members` row for that project → project role + project financial_level.
 4. Effective permission for (user, project) = project role permissions ∪ org role permissions, then apply overrides valid at now(): explicit `allowed = false` wins over any grant; `allowed = true` adds.
 5. Project visibility = has an active project membership OR org role holds `project.view` at org scope (Director, Contabilidad).
-6. Financial: effective_level = max(org level, project level); a `financial.*` read requires both the permission and the level threshold (contract F3, cost F2, margin/collection F4). `project_financials` SELECT requires level >= 3 plus `financial.contract_view`.
+6. Financial: effective_level = max(org level, project level). Every `project_financials` read requires **both** a sufficient level **and** an explicit permission: contract fields = F3 + `financial.contract_view`; cost fields = F2 + `financial.cost_view`; margin and collections = F4 + `financial.margin_view` / `financial.collection_view`. Accounting-document permissions (Cecy's bundle) never imply any of these, so Contabilidad at F2 sees no contract or margin data, and Almacén at F0/F1 receives zero `project_financials` rows.
+7. Organization scoping is explicit: the organization_id always comes from the protected resource or from the caller's membership row passed into the helper. There is no ambiguous `private.current_org()`; if it is ever reintroduced it must raise on more than one active organization membership rather than silently picking the first.
 
-## 5. RLS strategy (all tables: RLS enabled, explicit GRANTs, no `anon` grants)
+## 5. GRANTs and RLS per table
 
-| Table | SELECT | INSERT/UPDATE/DELETE |
-|---|---|---|
-| organizations | active org member | `user.manage` only |
-| business_units | active org member | `user.manage` |
-| profiles | self, or same-org member | self (limited cols); admin via `user.manage` |
-| organization_members | self rows, or `user.manage` | `user.manage` only |
-| roles / permissions / role_permissions | any authenticated org member (read-only catalog) | none from client |
-| projects | `private.can_access_project(id)` | `project.edit` / `user.manage` |
-| project_financials | level >= 3 + `financial.contract_view` | F4 + explicit permission |
-| project_members | own rows or `user.manage` in that project | `user.manage` |
-| overrides | via parent member visibility | `user.manage` |
-| project_locations | `private.can_access_project(project_id)` | `project.edit` |
-| audit_logs | `audit.view` scoped to org/project, or Superadmin | INSERT only via definer functions; no UPDATE/DELETE |
-| private.platform_admins | none from the client (no grants, not in the API) | none from the client; managed by migration or a verified server function |
+GRANT decides whether a role may attempt an operation; RLS decides which rows. Both are specified explicitly; Supabase default privileges are not relied upon. Every table starts with `REVOKE ALL ... FROM PUBLIC, anon;` — `anon` receives no privilege on any DFN business table. `service_role` receives `ALL` on public tables for server-side maintenance. RLS is enabled on every public table.
 
-Each administrative table also carries an explicit `private.is_superadmin()` policy for write operations, in addition to the `user.manage` business path. No client-side database role has BYPASSRLS.
+| Table | GRANT to `authenticated` | SELECT policy | Write policy |
+|---|---|---|---|
+| organizations | SELECT | active org member | Superadmin only |
+| business_units | SELECT | active org member | Superadmin only |
+| profiles | SELECT | self, or same-org member | none — self edits via `public.update_own_profile`; activation/admin fields Superadmin only |
+| organization_members | SELECT | own rows, or Superadmin | Superadmin only (no INSERT/UPDATE/DELETE grant to `authenticated`) |
+| roles | SELECT | authenticated org member (read-only catalog) | Superadmin only (no write grant) |
+| permissions | SELECT | authenticated org member | Superadmin only (no write grant) |
+| role_permissions | SELECT | authenticated org member | Superadmin only (no write grant) |
+| projects | SELECT, UPDATE | `private.can_access_project(id)` | UPDATE requires `project.edit` in that project; INSERT/DELETE Superadmin only |
+| project_financials | SELECT | level + explicit financial permission per field group (see §4.6) | Superadmin only in Phase 2 |
+| project_members | SELECT | own rows, or project members visible to the caller | Superadmin only (no write grant) |
+| project_member_permission_overrides | SELECT | via parent member visibility | Superadmin only (no write grant) |
+| project_locations | SELECT, INSERT, UPDATE | `private.can_access_project(project_id)` | requires `project.edit`; DELETE not granted (archive instead) |
+| audit_logs | SELECT | `audit.view` scoped to org/project, or Superadmin | no INSERT/UPDATE/DELETE grant; written only by definer triggers/functions |
+| private.platform_admins | none | none from the client (schema not exposed) | none from the client; managed by the one-time bootstrap script or a verified server function |
 
-Dependency graph (avoids recursion): policies on business tables call `private.*` SECURITY DEFINER helpers, which read membership tables directly with RLS bypassed. Membership tables' own policies use only `auth.uid()` comparisons, `private.is_superadmin()`, or a single non-recursive `private.has_org_permission` that reads `organization_members` as definer — never a policy on the same table it queries. `private.platform_admins` has no policies reachable from the client at all, so `is_superadmin` cannot recurse.
+Security-bearing rows (`organization_members`, `project_members`, overrides, `roles`, `role_permissions`, `project_financials`) therefore have **no client mutation grant at all** in Phase 2 — a normal user cannot even attempt the write, so correctness does not depend on subtle RLS expressions.
 
-## 6. Helper functions (schema `private`)
+Dependency graph (avoids recursion): policies on business tables call `private.*` SECURITY DEFINER helpers, which read membership tables with RLS bypassed. Membership tables' own policies use only `auth.uid()` comparisons or `private.is_superadmin()` — never a policy on the same table it queries. `private.platform_admins` has no client-reachable policy, so `is_superadmin` cannot recurse.
 
-`is_superadmin(user_id)`, `is_organization_member(org)`, `has_org_permission(code)`, `is_project_member(project)`, `can_access_project(project)`, `has_project_permission(project, code)`, `financial_access_level(project)`, `current_org()`. All STABLE, SECURITY DEFINER, `set search_path = ''`, fully qualified, EXECUTE revoked from `public`/`anon`/`authenticated`. Reason: single source of truth, keeps policies short, prevents recursive membership evaluation, and keeps admin status unreadable by ordinary users.
+## 6. Helper functions (schema `private`) — least privilege per function
+
+The `private` schema is never added to the Supabase Data API exposed schemas, so nothing here is published as an RPC endpoint. Two distinct classes:
+
+**A. Internal policy helpers** — referenced inside RLS policies, so the *caller* must be able to execute them. `GRANT USAGE ON SCHEMA private TO authenticated;` plus `GRANT EXECUTE` on each named function individually — never `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA private`, and no default privileges. All are STABLE, SECURITY DEFINER (required to read membership tables without recursion), `set search_path = ''`, fully qualified, boolean/scalar return only, and revoked from `PUBLIC` and `anon`:
+
+`private.is_superadmin(uuid default auth.uid())`, `private.is_organization_member(uuid)`, `private.has_org_permission(text)`, `private.is_project_member(uuid)`, `private.can_access_project(uuid)`, `private.has_project_permission(uuid, text)`, `private.financial_access_level(uuid)`.
+
+**B. Privileged mutation functions** — administrative or write-capable definer functions. `REVOKE ALL FROM PUBLIC, anon, authenticated`; EXECUTE is granted only when the function *is* the intentional protected API for that operation, and the function verifies the caller itself (`private.is_superadmin()` or the required permission) before mutating. The audit-write functions stay unreachable from the client and are invoked only by triggers.
+
+`public.update_own_profile(...)` is the one deliberately client-callable protected mutation in Phase 2: EXECUTE to `authenticated`, writes only the four self-editable columns for `auth.uid()`.
+
+No views are created in Phase 2. Any future view exposed to `authenticated` must be `WITH (security_invoker = true)` so caller RLS applies.
+
 
 
 ## 7. Migration order (small, reviewable)
