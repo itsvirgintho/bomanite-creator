@@ -317,7 +317,12 @@ Supabase Free, current Lovable plan, GitHub Free only. No new paid services and 
 - All `private` functions are `search_path = ''`, fully qualified, and SECURITY DEFINER only where RLS recursion/bypass genuinely requires it.
 - 12 business roles are seeded; every reference to 11 has been corrected; Superadmin is not a business role.
 - Phase 2 sensitive administrative writes are Superadmin-only; `admin.*` delegated codes are seeded but mapped to no role; Director General F4 grants no administration.
-- `project_financials` reads require both a financial level and an explicit financial permission per field group; Contabilidad at F2 and Almacén at F0/F1 return 0 rows.
+- Financial data is split into `project_cost_financials` (F2 + `financial.cost_view`), `project_contract_financials` (F3 + `financial.contract_view`) and `project_executive_financials` (F4 + `financial.margin_view`), each with its own single-class SELECT policy; no policy spans classes and no column-level privileges are relied on. `target_margin` is documented as a rate (0.1250 = 12.50 %).
+- `organization_members.role_id` is nullable; a membership with NULL role and F0 grants nothing, and project-scoped employees gain no organization-wide reach.
+- `permissions.scope` exists with CHECK ('platform','organization','project'); mappings are honored only on the matching plane, and project visibility distinguishes direct project membership from explicit organization portfolio permission.
+- Effective financial level follows the documented deterministic rule; no blanket `max(org, project)`.
+- `public.update_own_profile` takes no target user_id, requires an active caller profile, writes only the four self-service columns, and is executable only by `authenticated`.
+
 - Superadmin has no blanket `is_superadmin() OR ...` SELECT on business tables; audit read is the only documented global exception.
 - No views are created; any future view is `security_invoker = true`.
 - No ambiguous `private.current_org()` exists; organization_id is always explicit.
