@@ -72,11 +72,12 @@ organizations 1─* audit_logs *─0..1 projects
 
 ## 4. Access resolution algorithm (deterministic, scope-aware)
 
-Permissions carry a `scope` (`platform` | `organization` | `project`). A mapping is only honored on the plane matching its scope. **An organization role holding a project-scoped permission never converts it into organization-wide project access.**
+Scope lives on `role_permissions`, not on `permissions`. A mapping is only honored on the plane matching `role_permissions.scope`. **An organization role holding a project-scoped mapping never converts it into organization-wide access, and a project-scoped mapping never leaks to the organization plane.**
 
 1. `uid = auth.uid()`; require `profiles.is_active = true`. Otherwise nothing is granted.
-2. Org plane: the active `organization_members` row (starts_at <= now, ends_at null or > now, is_active). If `role_id IS NULL`, the user is merely a DFN member: **zero organization permissions, organization financial level treated as F0**, no project reach. If `role_id` is set, org permissions = role permissions **whose scope = 'organization'** (plus `platform`-scoped codes only if ever mapped, which Phase 2 does not do).
-3. Project plane, per project P: the active `project_members` row for P. Project permissions = role permissions **whose scope = 'project'**, then apply overrides for that membership valid at now(): `allowed = false` wins over any grant; `allowed = true` adds. Overrides affect the project set only.
+2. Org plane: the active `organization_members` row (starts_at <= now, ends_at null or > now, is_active). If `role_id IS NULL`, the user is merely a DFN member: **zero organization permissions, organization financial level treated as F0**, no project reach. If `role_id` is set, org permissions = that role's mappings **with `role_permissions.scope = 'organization'`** only.
+3. Project plane, per project P: the active `project_members` row for P. Project permissions = that role's mappings **with `role_permissions.scope = 'project'`**, then apply overrides for that membership valid at now(): `allowed = false` wins over any grant; `allowed = true` adds. Overrides affect the project set only.
+
 4. Project visibility is two distinct, non-interchangeable paths:
    - **A. Direct project access** — an active `project_members` row for P (with the relevant project permission for the action).
    - **B. Organization portfolio access** — an explicit organization-scoped permission such as `portfolio.view` held by an org role (Director General, authorized Contabilidad, authorized management). This is deliberately assigned, never implied by a job title.
