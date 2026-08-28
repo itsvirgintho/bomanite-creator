@@ -84,13 +84,17 @@ organizations 1─* audit_logs *─0..1 projects
 | project_members | own rows or `user.manage` in that project | `user.manage` |
 | overrides | via parent member visibility | `user.manage` |
 | project_locations | `private.can_access_project(project_id)` | `project.edit` |
-| audit_logs | `audit.view` scoped to org/project | INSERT only via definer functions; no UPDATE/DELETE |
+| audit_logs | `audit.view` scoped to org/project, or Superadmin | INSERT only via definer functions; no UPDATE/DELETE |
+| private.platform_admins | none from the client (no grants, not in the API) | none from the client; managed by migration or a verified server function |
 
-Dependency graph (avoids recursion): policies on business tables call `private.*` SECURITY DEFINER helpers, which read membership tables directly with RLS bypassed. Membership tables' own policies use only `auth.uid()` comparisons or a single non-recursive `private.has_org_permission` that reads `organization_members` as definer — never a policy on the same table it queries.
+Each administrative table also carries an explicit `private.is_superadmin()` policy for write operations, in addition to the `user.manage` business path. No client-side database role has BYPASSRLS.
+
+Dependency graph (avoids recursion): policies on business tables call `private.*` SECURITY DEFINER helpers, which read membership tables directly with RLS bypassed. Membership tables' own policies use only `auth.uid()` comparisons, `private.is_superadmin()`, or a single non-recursive `private.has_org_permission` that reads `organization_members` as definer — never a policy on the same table it queries. `private.platform_admins` has no policies reachable from the client at all, so `is_superadmin` cannot recurse.
 
 ## 6. Helper functions (schema `private`)
 
-`is_organization_member(org)`, `has_org_permission(code)`, `is_project_member(project)`, `can_access_project(project)`, `has_project_permission(project, code)`, `financial_access_level(project)`, `current_org()`. All STABLE, SECURITY DEFINER, `set search_path = ''`. Reason: single source of truth, keeps policies short, and prevents recursive membership evaluation.
+`is_superadmin(user_id)`, `is_organization_member(org)`, `has_org_permission(code)`, `is_project_member(project)`, `can_access_project(project)`, `has_project_permission(project, code)`, `financial_access_level(project)`, `current_org()`. All STABLE, SECURITY DEFINER, `set search_path = ''`, fully qualified, EXECUTE revoked from `public`/`anon`/`authenticated`. Reason: single source of truth, keeps policies short, prevents recursive membership evaluation, and keeps admin status unreadable by ordinary users.
+
 
 ## 7. Migration order (small, reviewable)
 
