@@ -1,5 +1,5 @@
-import { Link } from "@tanstack/react-router";
 import type { ComponentType } from "react";
+import { AppLink } from "@/components/common/AppLink";
 
 export interface QuickAction {
   id: string;
@@ -14,7 +14,7 @@ export function QuickActionGrid({ actions }: { actions: QuickAction[] }) {
   return (
     <div className="grid grid-cols-2 gap-3">
       {actions.map((action) => (
-        <Link
+        <AppLink
           key={action.id}
           to={action.to}
           params={action.params}
@@ -22,7 +22,7 @@ export function QuickActionGrid({ actions }: { actions: QuickAction[] }) {
         >
           <action.icon aria-hidden className="h-6 w-6 text-accent-foreground" />
           <span className="text-base font-semibold">{action.label}</span>
-        </Link>
+        </AppLink>
       ))}
     </div>
   );
