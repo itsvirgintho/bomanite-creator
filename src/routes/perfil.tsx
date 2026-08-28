@@ -1,30 +1,26 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeader } from "@/components/common/PageHeader";
-import { RoleBadge } from "@/components/common/RoleBadge";
-import { DemoRoleSwitcher } from "@/components/demo/DemoRoleSwitcher";
-import { ROLE_LABELS } from "@/config/roles";
-import { useSession } from "@/contexts/session-context";
-import { DEMO_PROJECTS } from "@/mocks";
+import { useAuth } from "@/contexts/auth-context";
+import { profileDisplayName } from "@/types/authorization";
 
 export const Route = createFileRoute("/perfil")({
   head: () => ({
     meta: [
       { title: "Perfil | DFN Control" },
-      { name: "description", content: "Perfil del usuario y controles de demostración." },
+      { name: "description", content: "Perfil del usuario autenticado en DFN Control." },
     ],
   }),
   component: PerfilPage,
 });
 
 function PerfilPage() {
-  const { user, role, availableProjects, signOut } = useSession();
+  const { user, authorizationContext, logout } = useAuth();
   const navigate = useNavigate();
 
-  const scope =
-    user.assignedProjectIds.length === 0
-      ? `Acceso a los ${DEMO_PROJECTS.length} proyectos del portafolio`
-      : availableProjects.map((project) => project.name).join(", ");
+  const profile = authorizationContext?.profile ?? null;
+  const organizations = authorizationContext?.organizations ?? [];
+  const projects = authorizationContext?.projects ?? [];
 
   return (
     <AppShell contextLabel="Perfil">
@@ -35,38 +31,55 @@ function PerfilPage() {
           <dl className="grid gap-4 sm:grid-cols-2">
             <div>
               <dt className="overline">Usuario</dt>
-              <dd className="mt-1 text-sm font-medium">{user.name}</dd>
+              <dd className="mt-1 text-sm font-medium">{profileDisplayName(profile)}</dd>
             </div>
             <div>
               <dt className="overline">Correo</dt>
-              <dd className="mt-1 text-sm">{user.email}</dd>
+              <dd className="mt-1 text-sm">{user?.email ?? "—"}</dd>
             </div>
             <div>
-              <dt className="overline">Rol</dt>
-              <dd className="mt-1 flex items-center gap-2 text-sm">
-                <RoleBadge role={role} />
-                <span className="text-muted-foreground">{ROLE_LABELS[role]}</span>
+              <dt className="overline">Puesto</dt>
+              <dd className="mt-1 text-sm">{profile?.job_title ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="overline">Código de empleado</dt>
+              <dd className="mt-1 text-sm">{profile?.employee_code ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="overline">Organizaciones</dt>
+              <dd className="mt-1 text-sm">
+                {organizations.length > 0
+                  ? organizations.map((organization) => organization.name).join(", ")
+                  : "Sin organizaciones asignadas"}
               </dd>
             </div>
             <div>
-              <dt className="overline">Nivel financiero</dt>
-              <dd className="mt-1 text-sm">F{user.financialLevel}</dd>
+              <dt className="overline">Proyectos con acceso</dt>
+              <dd className="mt-1 text-sm">
+                {projects.length > 0
+                  ? projects.map((project) => project.name).join(", ")
+                  : "Sin proyectos asignados"}
+              </dd>
             </div>
-            <div className="sm:col-span-2">
-              <dt className="overline">Proyectos asignados</dt>
-              <dd className="mt-1 text-sm">{scope}</dd>
-            </div>
+            {authorizationContext?.is_superadmin ? (
+              <div className="sm:col-span-2">
+                <dt className="overline">Plataforma</dt>
+                <dd className="mt-1 text-sm">
+                  Cuenta de Superadministrador de plataforma. No implica acceso a organizaciones,
+                  proyectos ni información financiera.
+                </dd>
+              </div>
+            ) : null}
           </dl>
         </section>
-
-        {/* DEMO/DEV ONLY — remover al implementar Supabase Auth */}
-        <DemoRoleSwitcher />
 
         <button
           type="button"
           onClick={() => {
-            signOut();
-            void navigate({ to: "/auth", replace: true });
+            void (async () => {
+              await logout();
+              void navigate({ to: "/auth", replace: true });
+            })();
           }}
           className="min-h-11 w-full rounded-md border border-border-strong px-4 text-sm font-medium hover:bg-muted sm:w-auto"
         >

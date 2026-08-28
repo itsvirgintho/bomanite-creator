@@ -108,7 +108,7 @@ export function AppShell({ children, contextLabel }: AppShellProps) {
                 className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:border-border-strong"
               >
                 <UserRound aria-hidden className="h-4 w-4" />
-                {user.name}
+                {displayName}
               </Link>
             </div>
           </div>
