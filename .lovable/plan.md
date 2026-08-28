@@ -130,7 +130,7 @@ The `private` schema is never added to the Supabase Data API exposed schemas, so
 
 **B. Privileged mutation functions** — administrative or write-capable definer functions. `REVOKE ALL FROM PUBLIC, anon, authenticated`; EXECUTE is granted only when the function *is* the intentional protected API for that operation, and the function verifies the caller itself (`private.is_superadmin()` or the required permission) before mutating. The audit-write functions stay unreachable from the client and are invoked only by triggers.
 
-`public.update_own_profile(...)` is the one deliberately client-callable protected mutation in Phase 2: EXECUTE to `authenticated`, writes only the four self-editable columns for `auth.uid()`.
+`public.update_own_profile(_first_name, _last_name, _phone, _avatar_path)` is the one deliberately client-callable protected mutation in Phase 2. Contract: **no target user_id argument ever** (the row is always `auth.uid()`); requires `auth.uid() IS NOT NULL`; requires the caller's `public.profiles.is_active = true`, otherwise it raises; updates only those four self-service columns; never touches `is_active`, `employee_code` or any authorization field; SECURITY DEFINER with `search_path = ''` and fully qualified relations/functions; `REVOKE EXECUTE FROM PUBLIC, anon`; `GRANT EXECUTE TO authenticated` only.
 
 No views are created in Phase 2. Any future view exposed to `authenticated` must be `WITH (security_invoker = true)` so caller RLS applies.
 
