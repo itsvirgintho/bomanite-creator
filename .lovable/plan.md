@@ -189,13 +189,14 @@ Accounting/administrative codes (granular, so Contabilidad does not need a high 
 Materials/Warehouse codes (future-ready, unused by Phase 2 screens):
 `material_request.create`, `material_request.submit`, `material_request.view_own`, `material_request.view_project`, `material_request.review`, `material_request.approve`, `material_request.reject`, `material_request.return`, `warehouse.request_view`, `warehouse.prepare`, `warehouse.mark_ready`, `warehouse.dispatch`, `shipment.create`, `shipment.view`, `shipment.update`, `material_receipt.create`, `material_receipt.confirm`, `material_damage.report`, `material_shortage.report`.
 
-Default role→permission mappings seeded now:
-- Maestro de Obra: `material_request.create`, `.submit`, `.view_own`, `material_receipt.confirm`, `material_damage.report`, `material_shortage.report`.
-- Residente de Obra: the Maestro requester/receiver set plus `material_request.view_project`.
-- Superintendente de Obra: `material_request.view_project`, `.review`, `.approve`, `.reject`, `.return`.
-- Director General / authorized management: approval permissions, applied per organization/project policy rather than assumed.
-- Almacén: `warehouse.request_view`, `warehouse.prepare`, `warehouse.mark_ready`, `warehouse.dispatch`, `shipment.create`, `shipment.view`, `shipment.update`.
-- Contabilidad: the accounting/administrative codes above; no warehouse or shipment permissions.
+Default role→permission mappings seeded now (each row carries its `scope`):
+- Maestro de Obra (project): `material_request.create`, `.submit`, `.view_own`, `material_receipt.confirm`, `material_damage.report`, `material_shortage.report`.
+- Residente de Obra (project): the Maestro requester/receiver set plus `material_request.view_project`.
+- Superintendente de Obra (project): `material_request.view_project`, `.review`, `.approve`, `.reject`, `.return`.
+- Director General / authorized management (organization): approval permissions, applied per organization/project policy rather than assumed.
+- Almacén (organization): `warehouse.request_view`, `warehouse.prepare`, `warehouse.mark_ready`, `warehouse.dispatch`, `shipment.create`, `shipment.view`, `shipment.update`.
+- Contabilidad (organization): the accounting/administrative codes above; no warehouse or shipment permissions.
+
 
 Financial level stays independent of these codes: a permission grants an action, the level gates money visibility.
 
