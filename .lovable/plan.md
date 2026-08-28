@@ -19,8 +19,8 @@ Core backend + real authorization. Replaces the mocked identity/project foundati
 Separation rules:
 - Superadmin ≠ Director General, ≠ F4, ≠ any org or project role. F4 never implies administration; administration never implies financial visibility.
 - A Superadmin who must also see business data receives an explicit organization membership (e.g. Director General + F4). Business reads stay governed by the normal membership/financial policies.
-- Helper: `private.is_superadmin(_user_id uuid default auth.uid())` — STABLE, SECURITY DEFINER, `search_path = ''`, fully qualified `private.platform_admins`, returns true only for an active row. It is an **internal policy helper**: `authenticated` receives `USAGE ON SCHEMA private` and `EXECUTE` on this specific function so policies evaluate under the caller; `anon` and `PUBLIC` are revoked. It returns a boolean only and cannot read or mutate data.
-- RLS behavior: no BYPASSRLS role is ever used from the browser. **Phase 2 rule: sensitive administrative writes are Superadmin-only** — organizations, business_units, roles, role_permissions, organization_members, project_members, permission overrides, financial levels, the three project financial tables, profile activation and platform/security configuration. Those tables receive write policies `USING/WITH CHECK (private.is_superadmin())` and no generic `user.manage` write path in this phase. Superadmin does **not** get a blanket `is_superadmin() OR ...` SELECT on business tables; the single documented global read exception is audit access. Project operational editing stays governed separately by project permissions.
+- Helper: `private.is_superadmin()` — **no arguments**; reads `auth.uid()` internally and returns false when it is null. STABLE, SECURITY DEFINER, `search_path = ''`, fully qualified `private.platform_admins`, true only for an active row, boolean return only. `authenticated` receives `USAGE ON SCHEMA private` and `EXECUTE` on this function so policies evaluate under the caller; `anon` and `PUBLIC` are revoked; the schema stays outside the exposed Data API schemas.
+- RLS behavior: no BYPASSRLS role is ever used from the browser, and **Superadmin status grants the browser no write privileges**. In Phase 2 `authenticated` has SELECT only on every table, so organizations, business_units, roles, role_permissions, organization_members, project_members, overrides, financial levels, the three project financial tables, project rows, locations, profile activation and platform/security configuration have **no client mutation path at all**. Initial configuration is performed with reviewed bootstrap/admin SQL. Superadmin does not get a blanket `is_superadmin() OR ...` SELECT on business tables; the single documented global read exception is audit access. When the Administration module is built later, sensitive writes will go through narrowly scoped trusted server functions that verify Superadmin server-side.
 - Delegated administration is future-ready but not granted now: `admin.organization.manage`, `admin.business_unit.manage`, `admin.user.manage`, `admin.membership.manage`, `admin.project.manage`, `admin.role.manage`, `admin.permission.manage` are seeded in the catalog and mapped to no role. Director General never receives them automatically.
 - Auth user management (future, not built in Phase 2): Superadmin browser → authenticated TanStack server function → verify `private.is_superadmin()` server-side → call the Supabase Auth admin API with the service-role key held only in the server runtime → create/invite/deactivate. The secret never reaches frontend code, and the client never calls the admin API directly. For Phase 2, test users are created manually in the Supabase dashboard.
 - Navigation readiness only: `src/config/navigation.ts` gains an `admin` group (`/administracion`, `/usuarios`, `/roles`, `/proyectos`, `/permisos`) rendered solely when the access context reports `isSuperadmin`. The routes and module screens are not built in Phase 2.
@@ -35,15 +35,16 @@ Types first: `financial_level` as constrained `smallint CHECK (between 0 and 4)`
 - **business_units**: id, organization_id FK, name, code, is_active, created_at. Unique (organization_id, code).
 - **profiles**: id PK/FK → auth.users (CASCADE for the profile row only, while business tables reference `profiles` with RESTRICT/SET NULL so history survives), first_name, last_name, phone?, avatar_path?, job_title?, employee_code?, is_active, created_at, updated_at. Created by an `AFTER INSERT ON auth.users` trigger (SECURITY DEFINER). Deactivation (`is_active = false`) is the normal offboarding path, not deletion. **No unrestricted UPDATE grant to `authenticated`** — RLS is row-level, not column-level, so self-editing goes through a narrow protected function `public.update_own_profile(first_name, last_name, phone, avatar_path)` (SECURITY DEFINER, `search_path = ''`, writes only those columns for `auth.uid()`, EXECUTE granted to `authenticated`). `is_active`, `employee_code` and any future authorization field are writable only through Superadmin-protected paths.
 - **roles**: id, organization_id nullable (NULL = system role shared by all orgs), code, name, default_financial_level, is_system_role, is_active. Unique (coalesce(organization_id), code). Seeded with the 12 approved DFN business roles: Director General, Director Construcción/Operaciones, Gerente/Coordinador de Proyecto, Superintendente de Obra, Residente de Obra, Supervisor, Maestro de Obra, Control de Obra/Costos, Compras, Almacén, Contabilidad, Administración. Platform Superadmin is not in this catalog.
-- **permissions**: id, code unique, name, category, description, **scope** text CHECK in ('platform','organization','project') NOT NULL. Scope declares at which plane a mapping can be honored — see §4.
-- **role_permissions**: role_id, permission_id, PK(role_id, permission_id).
+- **permissions**: id, code unique, name, category, description. **No `scope` column** — scope is not an intrinsic property of a code.
+- **role_permissions**: role_id, permission_id, **scope** text NOT NULL CHECK in ('platform','organization','project'), PK(role_id, permission_id, scope). Scope describes *how a role receives* the permission, so the same code may be organization-scoped for one role and project-scoped for another (e.g. `financial.cost_view`: organization for Director General, project for Residente). Codes are never duplicated to express scope.
+
 - **organization_members**: id, organization_id, user_id, **role_id NULLABLE**, financial_level (default 0), is_active, starts_at, ends_at?, created_at, created_by. Partial unique index on (organization_id, user_id) WHERE is_active. A row with `role_id = NULL` and level F0 means only "this user belongs to DFN" and grants nothing by itself.
 - **projects**: id, organization_id, business_unit_id?, project_code, name, client_name, description, project_type, address, latitude, longitude, contract_start_date, contract_end_date, actual_start_date?, actual_end_date?, status, cover_photo_path?, manager_user_id?, created_at, archived_at?. Unique (organization_id, project_code). No money columns.
 - **project_cost_financials** (F2 class): project_id PK/FK, approved_budget numeric(16,2), forecast_cost numeric(16,2), currency, updated_at, updated_by.
 - **project_contract_financials** (F3 class): project_id PK/FK, contract_value numeric(16,2), approved_change_value numeric(16,2), currency, updated_at, updated_by.
 - **project_executive_financials** (F4 class): project_id PK/FK, target_margin numeric(7,4), updated_at, updated_by. `target_margin` is a **rate**, not an amount: 0.1250 = 12.50 % target margin, CHECK between -1 and 1. Absolute margin amounts are derived at query time from contract and cost values, never stored here. No collection/payment rows live in any of these summary tables; future collections derive from dedicated client-invoice/payment entities.
 - **project_members**: id, project_id, user_id, role_id, financial_level, starts_at, ends_at?, is_active, assigned_by, created_at. Partial unique (project_id, user_id) WHERE is_active.
-- **project_member_permission_overrides**: id, project_member_id, permission_id, allowed bool, valid_from, valid_until?, granted_by, created_at. Unique (project_member_id, permission_id, valid_from).
+- **project_member_permission_overrides**: id, project_member_id, permission_id, allowed bool, valid_from, valid_until?, granted_by, created_at. Unique (project_member_id, permission_id, valid_from). **No scope column** — an override is inherently project-scoped: it only allows/denies project-scoped permissions for that one membership, never organization permissions and never platform Superadmin status.
 
 - **project_locations**: id, project_id, parent_location_id? FK → self (ON DELETE RESTRICT), location_type, code, name, description, sort_order, status, created_at, created_by, archived_at?. Indexes on (project_id, parent_location_id) and (project_id, sort_order). CHECK (id <> parent_location_id) blocks self-parenting; deeper cycles are prevented by a BEFORE INSERT/UPDATE trigger that walks ancestors recursively and raises on revisit, plus a CHECK that parent belongs to the same project.
 - **audit_logs**: id, organization_id, project_id?, actor_user_id, actor_name_snapshot, action, entity_type, entity_id, old_values jsonb, new_values jsonb, ip_address?, user_agent?, created_at. Append-only: no UPDATE/DELETE grants or policies for `authenticated`; writes happen through SECURITY DEFINER triggers/functions.
@@ -65,17 +66,18 @@ projects 1─0..1 project_executive_financials   (F4 + financial.margin_view)
 projects 1─* project_members *─1 roles
 project_members 1─* project_member_permission_overrides *─1 permissions
 projects 1─* project_locations ─* (self, recursive)
-roles *─* permissions (role_permissions)
+roles *─* permissions (role_permissions, PK role_id+permission_id+scope)
 organizations 1─* audit_logs *─0..1 projects
 ```
 
 ## 4. Access resolution algorithm (deterministic, scope-aware)
 
-Permissions carry a `scope` (`platform` | `organization` | `project`). A mapping is only honored on the plane matching its scope. **An organization role holding a project-scoped permission never converts it into organization-wide project access.**
+Scope lives on `role_permissions`, not on `permissions`. A mapping is only honored on the plane matching `role_permissions.scope`. **An organization role holding a project-scoped mapping never converts it into organization-wide access, and a project-scoped mapping never leaks to the organization plane.**
 
 1. `uid = auth.uid()`; require `profiles.is_active = true`. Otherwise nothing is granted.
-2. Org plane: the active `organization_members` row (starts_at <= now, ends_at null or > now, is_active). If `role_id IS NULL`, the user is merely a DFN member: **zero organization permissions, organization financial level treated as F0**, no project reach. If `role_id` is set, org permissions = role permissions **whose scope = 'organization'** (plus `platform`-scoped codes only if ever mapped, which Phase 2 does not do).
-3. Project plane, per project P: the active `project_members` row for P. Project permissions = role permissions **whose scope = 'project'**, then apply overrides for that membership valid at now(): `allowed = false` wins over any grant; `allowed = true` adds. Overrides affect the project set only.
+2. Org plane: the active `organization_members` row (starts_at <= now, ends_at null or > now, is_active). If `role_id IS NULL`, the user is merely a DFN member: **zero organization permissions, organization financial level treated as F0**, no project reach. If `role_id` is set, org permissions = that role's mappings **with `role_permissions.scope = 'organization'`** only.
+3. Project plane, per project P: the active `project_members` row for P. Project permissions = that role's mappings **with `role_permissions.scope = 'project'`**, then apply overrides for that membership valid at now(): `allowed = false` wins over any grant; `allowed = true` adds. Overrides affect the project set only.
+
 4. Project visibility is two distinct, non-interchangeable paths:
    - **A. Direct project access** — an active `project_members` row for P (with the relevant project permission for the action).
    - **B. Organization portfolio access** — an explicit organization-scoped permission such as `portfolio.view` held by an org role (Director General, authorized Contabilidad, authorized management). This is deliberately assigned, never implied by a job title.
@@ -84,11 +86,14 @@ Permissions carry a `scope` (`platform` | `organization` | `project`). A mapping
    - base = project membership `financial_level` when an active membership exists, else 0;
    - the organization membership level supplements it **only when the org role holds the organization-scoped authority covering that data class** (i.e. path B applies to P and the org role holds the required `financial.*` permission at organization scope);
    - otherwise `effective = project level`. Never a blanket `max(org, project)`; a passive membership (role NULL, F0) contributes nothing.
-6. Financial reads are per sensitivity table, each with its own policy — no single policy spans classes:
-   - `project_cost_financials`: project visibility (A or B) **and** effective level >= 2 **and** `financial.cost_view`.
-   - `project_contract_financials`: project visibility **and** effective level >= 3 **and** `financial.contract_view`.
-   - `project_executive_financials`: project visibility **and** effective level >= 4 **and** `financial.margin_view`.
-   Consequences: Cecy (Contabilidad F2 + accounting codes) reads neither contract nor executive rows; Almacén (F0/F1) reads none of the three; Diego Residente (F2) reads cost rows only if his project role explicitly includes `financial.cost_view`; Miguel (F3) reads cost/contract only with the explicit corresponding permissions; Pablo (F4) reads all three only through his explicit role permissions plus level; Superadmin platform status alone grants nothing on these tables.
+6. Financial reads are per sensitivity table, each with its own policy — no single policy spans classes. Each requires visibility, level and the financial permission **through the matching access path**:
+   - Direct project path: active project membership + the code mapped at `scope = 'project'` for the project role.
+   - Organization/global path: active org membership with non-null role + the code mapped at `scope = 'organization'`.
+   - `project_cost_financials`: visibility **and** effective level >= 2 **and** `financial.cost_view` on the same path.
+   - `project_contract_financials`: visibility **and** effective level >= 3 **and** `financial.contract_view` on the same path.
+   - `project_executive_financials`: visibility **and** effective level >= 4 **and** `financial.margin_view` on the same path.
+   The two paths are evaluated separately and never merged ambiguously. Consequences: Cecy (Contabilidad F2 + organization-scoped accounting codes) reads neither contract nor executive rows; Almacén (F0/F1) reads none of the three; Diego Residente (F2) reads cost rows only if his project role has `financial.cost_view` at project scope; Miguel (F3) reads cost/contract only with the explicit project-scoped permissions on assigned projects; Pablo (F4) reads all three through organization-scoped mappings plus level; Superadmin platform status alone grants nothing on these tables.
+
 7. Organization scoping is explicit: the organization_id always comes from the protected resource or from the caller's membership row passed into the helper. There is no ambiguous `private.current_org()`; if it is ever reintroduced it must raise on more than one active organization membership rather than silently picking the first.
 
 
@@ -96,25 +101,27 @@ Permissions carry a `scope` (`platform` | `organization` | `project`). A mapping
 
 GRANT decides whether a role may attempt an operation; RLS decides which rows. Both are specified explicitly; Supabase default privileges are not relied upon. Every table starts with `REVOKE ALL ... FROM PUBLIC, anon;` — `anon` receives no privilege on any DFN business table. `service_role` receives `ALL` on public tables for server-side maintenance. RLS is enabled on every public table.
 
-| Table | GRANT to `authenticated` | SELECT policy | Write policy |
-|---|---|---|---|
-| organizations | SELECT | active org member | Superadmin only |
-| business_units | SELECT | active org member | Superadmin only |
-| profiles | SELECT | self, or same-org member | none — self edits via `public.update_own_profile`; activation/admin fields Superadmin only |
-| organization_members | SELECT | own rows, or Superadmin | Superadmin only (no INSERT/UPDATE/DELETE grant to `authenticated`) |
-| roles | SELECT | authenticated org member (read-only catalog) | Superadmin only (no write grant) |
-| permissions | SELECT | authenticated org member | Superadmin only (no write grant) |
-| role_permissions | SELECT | authenticated org member | Superadmin only (no write grant) |
-| projects | SELECT, UPDATE | `private.can_access_project(id)` | UPDATE requires `project.edit` in that project; INSERT/DELETE Superadmin only |
-| project_cost_financials | SELECT | project visibility + level >= 2 + `financial.cost_view` | Superadmin only in Phase 2 |
-| project_contract_financials | SELECT | project visibility + level >= 3 + `financial.contract_view` | Superadmin only in Phase 2 |
-| project_executive_financials | SELECT | project visibility + level >= 4 + `financial.margin_view` | Superadmin only in Phase 2 |
+**Phase 2 rule: `authenticated` receives SELECT only, on every table.** No generic client INSERT/UPDATE/DELETE exists anywhere in this phase, including `projects` and `project_locations` — no project-administration or location-editor UI is being built. Initial configuration is done with reviewed bootstrap/admin SQL. Being Superadmin does **not** give the browser unrestricted write grants; later administration will run through narrowly scoped trusted server functions that verify Superadmin server-side.
 
-| project_members | SELECT | own rows, or project members visible to the caller | Superadmin only (no write grant) |
-| project_member_permission_overrides | SELECT | via parent member visibility | Superadmin only (no write grant) |
-| project_locations | SELECT, INSERT, UPDATE | `private.can_access_project(project_id)` | requires `project.edit`; DELETE not granted (archive instead) |
-| audit_logs | SELECT | `audit.view` scoped to org/project, or Superadmin | no INSERT/UPDATE/DELETE grant; written only by definer triggers/functions |
-| private.platform_admins | none | none from the client (schema not exposed) | none from the client; managed by the one-time bootstrap script or a verified server function |
+| Table | GRANT to `authenticated` | SELECT policy | Client writes in Phase 2 |
+|---|---|---|---|
+| organizations | SELECT | active org member | none |
+| business_units | SELECT | active org member | none |
+| profiles | SELECT | self, or same-org member | none — self edits only via `public.update_own_profile` |
+| organization_members | SELECT | own rows only (where permitted) | none |
+| roles | SELECT | active org member (read-only catalog) | none |
+| permissions | SELECT | active org member | none |
+| role_permissions | SELECT | active org member | none |
+| projects | SELECT | `private.can_access_project(id)` | none (`project.edit` is seeded for future protected APIs, not a row UPDATE grant) |
+| project_cost_financials | SELECT | visibility + level >= 2 + `financial.cost_view` on the matching path | none |
+| project_contract_financials | SELECT | visibility + level >= 3 + `financial.contract_view` on the matching path | none |
+| project_executive_financials | SELECT | visibility + level >= 4 + `financial.margin_view` on the matching path | none |
+| project_members | SELECT | own rows, or members of projects the caller can access | none |
+| project_member_permission_overrides | SELECT | via parent member visibility | none |
+| project_locations | SELECT | `private.can_access_project(project_id)` | none (future protected mutation path) |
+| audit_logs | SELECT | `audit.view` scoped to org/project, or Superadmin | none; written only by definer triggers/functions |
+| private.platform_admins | none | none from the client (schema not exposed) | none from the client; set by the one-time bootstrap script |
+
 
 Security-bearing rows (`organization_members`, `project_members`, overrides, `roles`, `role_permissions`, and the three financial tables) therefore have **no client mutation grant at all** in Phase 2 — a normal user cannot even attempt the write, so correctness does not depend on subtle RLS expressions. Each financial table gets its own single-class SELECT policy; no policy covers more than one sensitivity class.
 
@@ -126,7 +133,7 @@ The `private` schema is never added to the Supabase Data API exposed schemas, so
 
 **A. Internal policy helpers** — referenced inside RLS policies, so the *caller* must be able to execute them. `GRANT USAGE ON SCHEMA private TO authenticated;` plus `GRANT EXECUTE` on each named function individually — never `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA private`, and no default privileges. All are STABLE, SECURITY DEFINER (required to read membership tables without recursion), `set search_path = ''`, fully qualified, boolean/scalar return only, and revoked from `PUBLIC` and `anon`:
 
-`private.is_superadmin(uuid default auth.uid())`, `private.is_organization_member(uuid)`, `private.has_org_permission(text)` (organization-scoped codes only), `private.is_project_member(uuid)`, `private.can_access_project(uuid)` (direct membership OR explicit organization portfolio permission), `private.has_project_permission(uuid, text)` (project-scoped codes + overrides), `private.effective_financial_level(uuid)` (implements §4.5; no blanket `max(org, project)`), and `private.can_read_financial_class(uuid, smallint, text)` used by the three financial-table policies.
+`private.is_superadmin()` — **no argument**; resolves `auth.uid()` internally, returns false when it is null, boolean only. There is no Phase 2 need for a caller to ask whether an arbitrary UUID is Superadmin. Also: `private.is_organization_member(uuid)`, `private.has_org_permission(text)` (honors only mappings with `role_permissions.scope = 'organization'` for the caller's active org role, and only when that role is non-null), `private.is_project_member(uuid)`, `private.can_access_project(uuid)` (direct membership OR explicit organization-scoped portfolio permission), `private.has_project_permission(uuid, text)` (honors only mappings with `scope = 'project'` for the active project membership, then applies valid overrides), `private.effective_financial_level(uuid)` (implements §4.5; no blanket `max(org, project)`), and `private.can_read_financial_class(uuid, smallint, text)`, which checks visibility, level and the financial code **on the same access path** for the three financial-table policies.
 
 **B. Privileged mutation functions** — administrative or write-capable definer functions. `REVOKE ALL FROM PUBLIC, anon, authenticated`; EXECUTE is granted only when the function *is* the intentional protected API for that operation, and the function verifies the caller itself (`private.is_superadmin()` or the required permission) before mutating. The audit-write functions stay unreachable from the client and are invoked only by triggers.
 
@@ -149,7 +156,7 @@ No views are created in Phase 2. Any future view exposed to `authenticated` must
 9. audit_logs + audit write function/triggers.
 10. `private.platform_admins`.
 11. private helper functions (including `is_superadmin`) + `public.update_own_profile`.
-12. Explicit REVOKE/GRANT statements (schema USAGE, per-function EXECUTE, per-table privileges) and RLS policies for all of the above, including the Superadmin-only administrative write policies.
+12. Explicit REVOKE/GRANT statements (schema USAGE, per-function EXECUTE, SELECT-only table privileges for `authenticated`) and RLS policies for all of the above. No client write grants are issued in this phase.
 13. Seed reference data (12 roles, permission catalog, role mappings) — no personal identifiers.
 
 Each step is a separate migration presented for approval. The identity bootstrap is NOT a migration: it is a separate one-time reviewed script (section 9).
@@ -158,21 +165,20 @@ Each step is a separate migration presented for approval. The identity bootstrap
 
 The catalog is seeded in full in Phase 2 even though several codes have no screen yet. Categories: `project`, `admin`, `audit`, `financial`, `expense`, `vendor_invoice`, `client_invoice`, `reimbursement`, `material_request`, `warehouse`, `shipment`, `material_receipt`, `material_issue`.
 
-Every permission carries an explicit `scope` (`platform` | `organization` | `project`) that decides on which plane a role mapping is honored:
+Codes are scope-free. Scope is recorded per mapping in `role_permissions.scope`, so the same code can be organization-scoped for one role and project-scoped for another. Typical seeded mappings:
 
-| Code group | Scope |
-|---|---|
-| `portfolio.view` | organization |
-| `project.view`, `project.edit`, `project.location.manage` | project |
-| `financial.cost_view`, `financial.contract_view` | project |
-| `financial.margin_view`, `financial.collection_view` | project (may additionally be mapped at organization scope only by explicit executive role assignment) |
-| `audit.view` | organization (project-scoped audit reads use a separate `audit.view_project` code) |
-| `admin.*` | platform |
-| accounting codes (`expense.*`, `vendor_invoice.*`, `client_invoice.*`, `reimbursement.*`) | organization where cross-project by nature, project where the record is project-bound |
-| `material_request.*`, `material_receipt.*`, `material_damage.report`, `material_shortage.report` | project |
-| `warehouse.*`, `shipment.*` | organization (the warehouse serves all projects) |
+| Role | Codes | Mapping scope |
+|---|---|---|
+| Director General | `portfolio.view`, `financial.cost_view`, `financial.contract_view`, `financial.margin_view`, `financial.collection_view` where appropriate, executive/reporting codes | organization |
+| Contabilidad | accounting codes (`expense.*`, `vendor_invoice.*`, `client_invoice.*`, `reimbursement.*`) | organization |
+| Almacén | `warehouse.*`, `shipment.*` | organization |
+| Superintendente de Obra | `project.view`, operational project codes, `material_request.view_project`, `.review`, `.approve`, `.reject`, `.return` | project |
+| Residente de Obra | `project.view`, `material_request.create/.submit/.view_own/.view_project`, `material_receipt.confirm`, `material_damage.report`, `material_shortage.report`, and `financial.cost_view` only if explicitly intended | project |
+| Maestro de Obra | `project.view`, `material_request.create/.submit/.view_own`, `material_receipt.confirm`, `material_damage.report`, `material_shortage.report` | project |
+| (none in Phase 2) | `admin.*` | platform |
 
-A project-scoped code mapped to an organization role grants nothing organization-wide; it is only honored inside projects the user actually reaches through §4.4.
+A project-scoped mapping grants nothing organization-wide; it is only honored inside projects the user actually reaches through §4.4. An organization-scoped mapping is honored only when the org membership has a non-null role.
+
 
 Administration codes are seeded but mapped to **no role** in Phase 2 (Superadmin-only writes cover these operations for now): `admin.organization.manage`, `admin.business_unit.manage`, `admin.user.manage`, `admin.membership.manage`, `admin.project.manage`, `admin.role.manage`, `admin.permission.manage`. The generic `user.manage` key is retired as an authorization key. Financial codes are explicit per class: `financial.cost_view` (F2 → `project_cost_financials`), `financial.contract_view` (F3 → `project_contract_financials`), `financial.margin_view` (F4 → `project_executive_financials`), `financial.collection_view` (F4, reserved for future collection entities).
 
@@ -183,13 +189,14 @@ Accounting/administrative codes (granular, so Contabilidad does not need a high 
 Materials/Warehouse codes (future-ready, unused by Phase 2 screens):
 `material_request.create`, `material_request.submit`, `material_request.view_own`, `material_request.view_project`, `material_request.review`, `material_request.approve`, `material_request.reject`, `material_request.return`, `warehouse.request_view`, `warehouse.prepare`, `warehouse.mark_ready`, `warehouse.dispatch`, `shipment.create`, `shipment.view`, `shipment.update`, `material_receipt.create`, `material_receipt.confirm`, `material_damage.report`, `material_shortage.report`.
 
-Default role→permission mappings seeded now:
-- Maestro de Obra: `material_request.create`, `.submit`, `.view_own`, `material_receipt.confirm`, `material_damage.report`, `material_shortage.report`.
-- Residente de Obra: the Maestro requester/receiver set plus `material_request.view_project`.
-- Superintendente de Obra: `material_request.view_project`, `.review`, `.approve`, `.reject`, `.return`.
-- Director General / authorized management: approval permissions, applied per organization/project policy rather than assumed.
-- Almacén: `warehouse.request_view`, `warehouse.prepare`, `warehouse.mark_ready`, `warehouse.dispatch`, `shipment.create`, `shipment.view`, `shipment.update`.
-- Contabilidad: the accounting/administrative codes above; no warehouse or shipment permissions.
+Default role→permission mappings seeded now (each row carries its `scope`):
+- Maestro de Obra (project): `material_request.create`, `.submit`, `.view_own`, `material_receipt.confirm`, `material_damage.report`, `material_shortage.report`.
+- Residente de Obra (project): the Maestro requester/receiver set plus `material_request.view_project`.
+- Superintendente de Obra (project): `material_request.view_project`, `.review`, `.approve`, `.reject`, `.return`.
+- Director General / authorized management (organization): approval permissions, applied per organization/project policy rather than assumed.
+- Almacén (organization): `warehouse.request_view`, `warehouse.prepare`, `warehouse.mark_ready`, `warehouse.dispatch`, `shipment.create`, `shipment.view`, `shipment.update`.
+- Contabilidad (organization): the accounting/administrative codes above; no warehouse or shipment permissions.
+
 
 Financial level stays independent of these codes: a permission grants an action, the level gates money visibility.
 
@@ -259,12 +266,18 @@ Role visibility additions for the new real roles: Superintendente de Obra sees p
 Business access: Pablo (Director, org role + `portfolio.view`) reaches all org projects and reads the financial classes his explicit permissions cover; Residente reads assigned project only, 0 rows for any unrelated project; Maestro assigned project only and 0 rows from all three financial tables; Anonymous 0 rows everywhere. Plus expired membership → no access; inactive membership → no access; override deny removes a role-granted project permission; override allow grants one; unauthorized project URL renders the unavailable state; direct PostgREST query with a known UUID returns empty.
 
 Scope and membership-plane tests:
-- Diego Residente: organization membership exists with `role_id = NULL`; only the Maraluna project membership grants access; any other DFN project returns zero rows; adding/keeping an organization membership alone never creates project access; at F2 he reads `project_cost_financials` for Maraluna only if his project role explicitly holds `financial.cost_view`, and reads 0 rows from contract and executive tables.
-- Miguel: Superintendente permissions apply only inside explicitly assigned projects; unassigned projects return zero rows unless a separately configured organization-level role is granted.
-- Pablo: the organization Director role with `portfolio.view` grants the intended portfolio/global project access.
+- Scope comes from `role_permissions.scope`, not from the permission row: the same code (`financial.cost_view`) resolves at organization scope for Director General and at project scope for Residente, with no duplicated codes.
+- A project-scoped mapping on an organization role never becomes an organization-wide permission; an organization-scoped mapping is ignored on the project plane.
+- Passive organization membership (`role_id = NULL`, F0) grants nothing: no portfolio, no project, no financial rows.
+- Diego Residente: organization membership with `role_id = NULL`; only the Maraluna project membership grants access; any other DFN project returns zero rows; at F2 he reads `project_cost_financials` for Maraluna only if his project role holds `financial.cost_view` at project scope, and reads 0 rows from contract and executive tables.
+- Miguel: Superintendente permissions apply only inside explicitly assigned projects; unassigned projects return zero rows.
+- Ricardo: Maestro reaches only his assigned project.
+- Pablo: the organization Director role with organization-scoped `portfolio.view` grants portfolio access organization-wide.
 - Cecy: organization-scoped Contabilidad permissions support cross-project accounting flows; F2 accounting access exposes neither `project_contract_financials` nor `project_executive_financials`.
-- Almacén: organization-scoped warehouse permission may expose the future cross-project warehouse queue; all three financial tables return 0 rows.
-- A project-scoped permission mapped onto an organization role does not grant organization-wide project access.
+- Almacén: organization-scoped warehouse permissions may expose the future cross-project warehouse queue; all three financial tables return 0 rows.
+- Project and project_location writes from the browser fail at the GRANT level (SELECT-only), for every role including Superadmin.
+- Normal users cannot grant themselves permissions, memberships or a higher financial level by any path.
+
 
 Financial-table isolation tests:
 - An F2 user with `financial.cost_view` reads allowed `project_cost_financials` rows and gets 0 rows / permission denied from contract and executive tables.
@@ -311,15 +324,15 @@ Supabase Free, current Lovable plan, GitHub Free only. No new paid services and 
 
 - The 15 public core tables (the three split financial tables replace `project_financials`) plus `private.platform_admins` exist with PKs, FKs, uniques, checks, indexes and restrictive deletes.
 - Every public table has explicit REVOKE/GRANT statements for `anon`, `authenticated` and `service_role`, plus RLS enabled and policies; nothing relies on Supabase default privileges. `anon` holds no privilege on any DFN business table.
-- Security-bearing tables (`organization_members`, `project_members`, overrides, `roles`, `role_permissions`, and the three financial tables) have no client mutation grant at all.
+- `authenticated` has **SELECT only** on every table — no client INSERT/UPDATE/DELETE anywhere, including `projects` and `project_locations`; Superadmin status grants the browser no write privileges; initial configuration runs through reviewed bootstrap/admin SQL.
 - `private` is not in the Data API exposed schemas; `authenticated` has `USAGE ON SCHEMA private` and per-function `EXECUTE` only on the named policy helpers, and RLS queries actually succeed for signed-in users.
 - Privileged mutation functions are revoked from `authenticated`; the only client-callable protected mutation is `public.update_own_profile`, restricted to first_name, last_name, phone and avatar_path for `auth.uid()`.
 - All `private` functions are `search_path = ''`, fully qualified, and SECURITY DEFINER only where RLS recursion/bypass genuinely requires it.
 - 12 business roles are seeded; every reference to 11 has been corrected; Superadmin is not a business role.
-- Phase 2 sensitive administrative writes are Superadmin-only; `admin.*` delegated codes are seeded but mapped to no role; Director General F4 grants no administration.
+- Phase 2 builds no administration UI (no browser flows for creating/deactivating users, changing roles, changing F0–F4, assigning projects, managing overrides or granting Superadmin); `admin.*` codes are seeded but mapped to no role; Director General F4 grants no administration. `private.is_superadmin()` takes no argument.
 - Financial data is split into `project_cost_financials` (F2 + `financial.cost_view`), `project_contract_financials` (F3 + `financial.contract_view`) and `project_executive_financials` (F4 + `financial.margin_view`), each with its own single-class SELECT policy; no policy spans classes and no column-level privileges are relied on. `target_margin` is documented as a rate (0.1250 = 12.50 %).
 - `organization_members.role_id` is nullable; a membership with NULL role and F0 grants nothing, and project-scoped employees gain no organization-wide reach.
-- `permissions.scope` exists with CHECK ('platform','organization','project'); mappings are honored only on the matching plane, and project visibility distinguishes direct project membership from explicit organization portfolio permission.
+- Scope lives on `role_permissions.scope` (CHECK 'platform'/'organization'/'project', PK role_id+permission_id+scope) and **not** on `permissions`; the same code works at organization scope for one role and project scope for another without duplicating codes; project-scoped mappings never become organization-wide; overrides carry no scope column and affect only their project membership; project visibility distinguishes direct project membership from explicit organization-scoped portfolio permission.
 - Effective financial level follows the documented deterministic rule; no blanket `max(org, project)`.
 - `public.update_own_profile` takes no target user_id, requires an active caller profile, writes only the four self-service columns, and is executable only by `authenticated`.
 
