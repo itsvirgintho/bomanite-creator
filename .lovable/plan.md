@@ -227,7 +227,18 @@ Platform administration (run with the two real accounts):
 - Account A (Superadmin): can perform permitted administrative writes through the approved protected paths; sees the administration navigation; reads business/financial data only through its separately assigned Director General + F4 membership, except the documented audit-read policy.
 - Director non-Superadmin: F4 grants no administration; cannot change roles, permissions, memberships or financial levels.
 - Account B (Residente): `private.platform_admins` is unreadable (function/table not in the API); admin navigation hidden and admin URLs render unauthorized; cannot assign roles, modify memberships, change financial levels or view unrelated projects; direct Supabase API attempts blocked by grants/RLS.
-- Privilege escalation (all must fail): insert self into platform_admins; modify own organization_members row; change own role_id; raise own financial_level; insert a project_members row for self; insert a permission override for self; grant self any material_request approval or warehouse permission.
+- Privilege escalation (all must fail): insert self into platform_admins; modify own `organization_members` row; change own role_id; raise own financial_level; change own `ends_at`/`is_active`; insert a project_members row for self; insert a permission override for self; grant self any material_request approval or warehouse permission.
+
+Grants and helper-privilege tests:
+- Signed-in user queries a policy-protected table successfully — proving `authenticated` really can execute the `private` policy helpers (USAGE + per-function EXECUTE granted).
+- The `private` helpers are NOT callable as Data API RPC (`/rest/v1/rpc/is_superadmin` fails; the schema is not exposed) and `anon` cannot execute them.
+- Privileged mutation functions are not executable by `authenticated` except `public.update_own_profile`.
+- Resident updates `phone` via `update_own_profile` successfully, and cannot change `is_active` or `employee_code` by any path (no UPDATE grant on `public.profiles`).
+- Resident's direct INSERT/UPDATE on `organization_members`, `project_members`, overrides, `roles`, `role_permissions` fails at the GRANT level, not just RLS.
+- Director F4 (non-Superadmin) cannot administer RBAC or memberships.
+- Cecy's accounting permissions return 0 rows from `project_financials` at F2; Almacén returns 0 rows.
+- Superadmin platform status alone returns 0 `project_financials` rows without a separately assigned membership and level.
+- If any view exists, it is `security_invoker = true` and returns caller-scoped rows.
 
 
 
