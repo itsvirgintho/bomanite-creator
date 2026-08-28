@@ -4,29 +4,28 @@ Objetivo: construir el esqueleto de la aplicación (shell, navegación por rol, 
 
 ## A. Orden de implementación
 
-1. Design tokens y sistema visual en `src/styles.css` (paleta industrial, tipografía, radios contenidos, estados accesibles).
+1. Design tokens y sistema visual en `src/styles.css` (neutros industriales, tipografía, radios contenidos, estados accesibles). Marca temporal: wordmark de texto "DFN CONTROL", centralizado y reemplazable.
 2. Tipos de dominio (`src/types/`) y mock data centralizada (`src/mocks/`).
-3. Contextos: `SessionContext` (usuario + rol activo, mock) y `ProjectContext` (proyecto activo + persistencia en localStorage).
+3. Contextos: `SessionContext` (usuario + rol demo) y `ProjectContext` (proyecto activo derivado de la URL, con fallback client-side tras hidratación).
 4. Pantalla de acceso `/auth` (solo UI, sin registro público) y guardia de rutas.
 5. Shell de aplicación: `AppShell` desktop (sidebar + topbar) y `MobileShell` (topbar compacto + bottom nav).
 6. Navegación consciente de rol (definición declarativa de items + filtro por rol).
 7. Selector de proyecto (desktop en sidebar/topbar, mobile en hoja inferior).
-8. Componentes reutilizables compartidos (AttentionCard, MetricTile, StatusPill, EmptyState, LoadingState, ErrorState, SectionHeader, QuickActionButton).
+8. Componentes reutilizables compartidos (AttentionPanel, MetricTile, StatusPill, EmptyState, LoadingState, ErrorState, PageHeader, QuickActionGrid, DemoDataNotice).
 9. Homes por rol: Director, Residente, Maestro, Contabilidad.
 10. Rutas placeholder de módulos futuros con estado "Módulo en preparación".
-11. Revisión responsive, accesibilidad y metadatos `head()` por ruta.
+11. Revisión responsive, accesibilidad y `head()` con títulos claros por ruta.
 
 ## B. Rutas esperadas
 
 ```text
 /auth                     Acceso (correo + contraseña, UI only)
 /                         Redirección según rol al home correspondiente
-/portafolio               Home Director General (portafolio)
-/proyecto/$projectId      Layout de proyecto (contexto activo)
+/portafolio               Home Director General (siempre inicia aquí, sin redirigir a proyecto)
+/proyecto/$projectId      Layout de proyecto (contexto canónico desde la URL)
   /proyecto/$projectId/   Home por rol dentro del proyecto (Residente / Maestro)
-/contabilidad             Home Contabilidad (multi-proyecto)
-/pendientes               Vista "Requiere tu atención" ampliada
-/perfil                   Perfil y cambio de rol demo
+/contabilidad             Home Contabilidad (multi-proyecto, sin proyecto activo requerido)
+/perfil                   Perfil y controles DEMO/DEV (cambio de rol)
 
 Placeholders "Módulo en preparación":
 /proyecto/$projectId/reportes
@@ -38,23 +37,25 @@ Placeholders "Módulo en preparación":
 /proyecto/$projectId/estimaciones
 ```
 
-Cada ruta define su propio `head()` con título y descripción en español.
+Cada ruta usa `head()` de TanStack para títulos claros (`Portafolio | DFN Control`, `Maraluna | DFN Control`). Aplicación interna: no se invierte esfuerzo en SEO elaborado de rutas protegidas.
 
 ## C. Arquitectura del shell
 
-- Desktop: sidebar fija (240px) con identidad DFN, selector de proyecto, grupos de navegación (Operación, Control, Financiero) y pie con usuario/rol; contenido con topbar de contexto (proyecto activo, breadcrumb, acciones).
+- Desktop: sidebar fija (240px) con wordmark DFN CONTROL, selector de proyecto, grupos de navegación (Operación, Control, Financiero) y pie con usuario/rol; contenido con topbar de contexto (proyecto activo, breadcrumb, acciones).
 - Mobile: topbar mínima (proyecto activo + acceso a perfil) y bottom navigation de máximo 5 destinos, adaptada por rol. No es el layout de escritorio comprimido: densidad, orden y acciones cambian.
 - Maestro en mobile: sin sidebar, sin tablas, tarjetas grandes con jerarquía "Hoy → Pendiente → Acciones rápidas" y 4 botones grandes (Reporte diario, Foto, Gasto, Incidencia).
 
 ## D. Navegación consciente de rol
 
-Un único módulo declarativo `src/config/navigation.ts` con items `{ id, label, to, icon, roles, financialLevel, surface: 'desktop' | 'mobile' | 'both' }`. El shell filtra por rol activo y nivel financiero. En esta fase el filtro es de UI; la autorización real se aplicará después con RLS en Supabase.
+Un único módulo declarativo `src/config/navigation.ts` con items `{ id, label, to, icon, roles, financialLevel, surface: 'desktop' | 'mobile' | 'both' }`. El shell filtra por rol activo y nivel financiero. En esta fase es exclusivamente demostración de UX: la visibilidad en UI no es autorización. La autorización real se aplicará después con Supabase Auth, membresía de proyecto, permisos y RLS. Esta distinción queda documentada en el código (`// UI visibility only — NOT authorization`).
 
-## E. Selector de proyecto
+## E. Selector de proyecto y SSR
 
-- Director y Contabilidad: multi-proyecto, pueden operar sin proyecto activo (vista portafolio) y elegir uno para hacer drill-down.
-- Residente y Maestro: inician con su proyecto asignado; Maestro no puede cambiar a proyectos no asignados.
-- El proyecto activo vive en `ProjectContext`, se refleja en la URL (`/proyecto/$projectId/...`) y se recuerda en localStorage.
+- La fuente canónica del proyecto activo es la URL: `/proyecto/$projectId/...`. Nada de leer proyecto activo desde localStorage durante render o SSR.
+- `ProjectContext` lee el `projectId` de la ruta. localStorage solo se usa client-side, en `useEffect` tras hidratación, para recordar el último proyecto y ofrecer selección por defecto en el selector.
+- Sin acceso a browser APIs en module scope, loaders o render; se evita hydration mismatch con `useEffect`/`useHydrated` donde aplique.
+- Director y Contabilidad operan sin proyecto activo (portafolio / contabilidad global) y eligen un proyecto para drill-down. Director General siempre inicia en `/portafolio`, incluso con un solo proyecto.
+- Residente y Maestro inician con su proyecto asignado; Maestro no puede cambiar a proyectos no asignados.
 
 ## F. Homes por rol (contenido de la fase)
 
@@ -63,11 +64,11 @@ Un único módulo declarativo `src/config/navigation.ts` con items `{ id, label,
 - Maestro: proyecto actual, trabajo de hoy, cuadrilla, reporte pendiente/devuelto, incidencias asignadas, planos vigentes y acciones rápidas. Sin contrato, precios unitarios, margen ni cobranza.
 - Contabilidad: gastos sin factura, reembolsos pendientes, facturas con problema, documentación pendiente. Los filtros (proyecto, periodo, proveedor, pago, factura) se dejan previstos en la interfaz de datos, no funcionales aún.
 
-Toda métrica se renderiza mediante un componente que ya acepta `drilldownTo`, para que ningún número quede muerto cuando existan datos reales.
+Toda métrica se renderiza mediante un componente que ya acepta `drilldownTo`, para que ningún número quede muerto cuando existan datos reales. Toda vista con datos demo muestra de forma clara pero discreta la leyenda "Datos de demostración" (en todos los homes por rol, no solo financieros).
 
 ## G. Componentes reutilizables
 
-`AppShell`, `MobileBottomNav`, `SidebarNav`, `ProjectSwitcher`, `RoleBadge`, `PageHeader`, `AttentionPanel`, `AttentionItem`, `MetricTile`, `ProgressCompare`, `HealthIndicator`, `StatusPill`, `QuickActionGrid`, `DataSection`, `EmptyState`, `LoadingState` (skeletons), `ErrorState`, `ModulePlaceholder`, `DemoDataBanner`.
+`AppShell`, `MobileBottomNav`, `SidebarNav`, `ProjectSwitcher`, `RoleBadge`, `PageHeader`, `AttentionPanel`, `AttentionItem`, `MetricTile`, `ProgressCompare`, `HealthIndicator`, `StatusPill`, `QuickActionGrid`, `EmptyState`, `LoadingState` (skeletons), `ErrorState`, `ModulePlaceholder`, `DemoDataNotice`, `DemoRoleSwitcher`.
 
 ## H. Estados
 
@@ -78,11 +79,11 @@ Toda métrica se renderiza mediante un componente que ya acepta `drilldownTo`, p
 
 ## I. Diseño y tokens
 
-Tokens semánticos en `src/styles.css` (oklch): superficie clara neutra, gris industrial, acento sobrio, y estados `success/warning/danger/info` con foreground legible. Tipografía técnica de alta legibilidad, escala de espaciado compacta en escritorio y generosa en móvil, radios pequeños, sombras mínimas. Sin gradientes decorativos, glassmorphism ni tipografía de marketing. Ningún color literal en componentes.
+Tokens semánticos en `src/styles.css` (oklch): superficie clara neutra, gris industrial, acento sobrio y temporal (paleta corporativa definitiva pendiente), y estados `success/warning/danger/info` con foreground legible. Marca (wordmark, acento) centralizada en tokens y un único componente de marca, reemplazable sin tocar componentes. Tipografía técnica de alta legibilidad, escala de espaciado compacta en escritorio y generosa en móvil, radios pequeños, sombras mínimas. Sin gradientes decorativos, glassmorphism ni tipografía de marketing. Ningún color literal ni branding hard-codeado en componentes.
 
-## J. Autenticación (esta fase)
+## J. Autenticación y cambio de rol DEMO
 
-Pantalla `/auth` con correo y contraseña, sin registro público ni recuperación funcional. La sesión es mock en `SessionContext` con un selector de rol de demostración para validar las cuatro experiencias. Estructura preparada para sustituir el proveedor mock por Supabase Auth sin tocar los componentes.
+Pantalla `/auth` con correo y contraseña, sin registro público ni recuperación funcional. La sesión es mock en `SessionContext`. El cambio de rol (Director General, Residente de Obra, Maestro de Obra, Contabilidad) vive únicamente en `/perfil` dentro de un bloque marcado "Controles DEMO/DEV", aislado en `DemoRoleSwitcher`, con comentarios que lo señalan como temporal. Nunca forma parte de la navegación de negocio, nunca es capacidad de producción, y está diseñado para eliminarse intacto cuando lleguen Supabase Auth y la membresía real.
 
 ## K. Accesibilidad
 
@@ -96,6 +97,7 @@ src/
     layout/      AppShell, SidebarNav, MobileBottomNav, ProjectSwitcher
     common/      MetricTile, StatusPill, EmptyState, LoadingState, ErrorState...
     attention/   AttentionPanel, AttentionItem
+    demo/        DemoRoleSwitcher, DemoDataNotice (marcados DEMO/DEV)
     ui/          shadcn base
   config/        navigation.ts, roles.ts
   contexts/      session-context.tsx, project-context.tsx
@@ -106,30 +108,37 @@ src/
 
 ## M. Tipos y mock data
 
-Tipos de dominio en inglés (`Role`, `Project`, `ProjectHealth`, `AttentionItem`, `MetricValue`, `CrewSummary`, `DrawingRef`), UI en español. Todo el mock vive en `src/mocks/`, exportado con prefijo `DEMO_` y visible en pantalla mediante `DemoDataBanner` en vistas con datos financieros.
+Tipos de dominio en inglés (`Role`, `Project`, `ProjectHealth`, `AttentionItem`, `MetricValue`, `CrewSummary`, `DrawingRef`), UI en español. Todo el mock vive en `src/mocks/`, exportado con prefijo `DEMO_`, y toda vista que lo use muestra "Datos de demostración" mediante `DemoDataNotice`.
 
 ## N. Fuera de alcance en esta fase
 
-Sin esquema de base de datos, tablas, migraciones ni RLS. Sin Reportes, Gastos, Estimaciones, Planos, Avance, Programa ni Incidencias funcionales. Sin subida de archivos, sin IA, sin Autodesk, sin empaquetado nativo, sin offline, sin pagos, sin registro público.
+Sin esquema de base de datos, tablas, migraciones ni RLS. Sin autenticación real. Sin Reportes, Gastos, Estimaciones, Planos, Avance, Programa ni Incidencias operativos. Sin subida de archivos, sin IA, sin Autodesk, sin empaquetado nativo, sin offline, sin pagos, sin registro público. Sin servicios de terceros de pago ni dependencias innecesarias: stack actual de Lovable + Supabase Free + GitHub Free.
 
-## O. Riesgos a resolver antes de implementar
+## O. Decisiones y riesgos resueltos
 
-1. Confirmar si el cambio de rol de demostración debe ser visible o quedar oculto tras el perfil.
-2. Confirmar si Contabilidad debe vivir fuera del contexto de proyecto (propuesta: sí, multi-proyecto).
-3. Confirmar la marca visual: color de acento, logotipo y nombre exacto a mostrar.
-4. Confirmar si Director inicia siempre en portafolio aun con un solo proyecto autorizado.
+1. Cambio de rol: aprobado como DEMO/DEV aislado en `/perfil`, removible.
+2. Contabilidad: workspace multi-proyecto global, sin proyecto activo requerido.
+3. Director: siempre inicia en `/portafolio`.
+4. Marca: wordmark temporal "DFN CONTROL" + tokens neutros industriales, centralizados.
+5. Riesgo restante: al llegar Supabase Auth, eliminar `SessionContext` mock y `DemoRoleSwitcher` sin tocar shell ni navegación; el aislamiento propuesto lo garantiza.
 
 ## P. Checklist de aceptación
 
-- [ ] `/` redirige al home correcto según rol.
+- [ ] `/` redirige al home correcto según rol; Director siempre aterriza en `/portafolio`.
 - [ ] Las cuatro experiencias de rol son navegables y visualmente distintas.
 - [ ] Desktop usa sidebar; mobile usa bottom nav con layouts genuinamente adaptados.
 - [ ] Maestro nunca ve información financiera sensible ni proyectos no asignados.
 - [ ] "Requiere tu atención" es el primer bloque en Residente, Contabilidad y Director.
-- [ ] Selector de proyecto funcional y persistente, con reglas por rol.
+- [ ] Proyecto activo proviene de la URL; localStorage solo como fallback tras hidratación; cero hydration mismatch.
+- [ ] Contabilidad funciona sin proyecto activo y permite elegir proyecto para drill-down.
+- [ ] Cambio de rol DEMO aislado en `/perfil`, claramente marcado DEMO/DEV, fuera de la navegación de negocio.
+- [ ] Toda vista con datos mock muestra "Datos de demostración" de forma discreta.
 - [ ] Rutas de módulos futuros muestran "Módulo en preparación".
 - [ ] Estados de carga, vacío y error implementados en todos los homes.
-- [ ] Cero colores literales en componentes; todo por tokens.
-- [ ] Mock data centralizada en `src/mocks/` y claramente etiquetada.
-- [ ] Sin tablas, migraciones ni lógica de backend.
-- [ ] Build y typecheck limpios; cada ruta con `head()` propio.
+- [ ] Marca centralizada en tokens/componente único; cero colores literales ni branding hard-codeado.
+- [ ] Navegación por rol documentada como visibilidad de UX, no autorización.
+- [ ] Mock data centralizada en `src/mocks/` con prefijo `DEMO_`.
+- [ ] `head()` con títulos claros por ruta (`Portafolio | DFN Control`, etc.).
+- [ ] Sin tablas, migraciones, autenticación real ni lógica de backend.
+- [ ] Sin dependencias nuevas innecesarias ni servicios de pago.
+- [ ] Build y typecheck limpios.
