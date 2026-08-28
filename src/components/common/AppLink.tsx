@@ -5,11 +5,11 @@ type LinkProps = ComponentProps<typeof Link>;
 
 interface AppLinkProps {
   to: string;
-  params?: Record<string, string>;
-  className?: string;
+  params?: Record<string, string> | undefined;
+  className?: string | undefined;
   children: ReactNode;
-  activeOptions?: LinkProps["activeOptions"];
-  "aria-label"?: string;
+  activeOptions?: LinkProps["activeOptions"] | undefined;
+  "aria-label"?: string | undefined;
   "aria-current"?: ComponentProps<"a">["aria-current"];
 }
 
