@@ -158,7 +158,24 @@ Each step is a separate migration presented for approval. The identity bootstrap
 
 The catalog is seeded in full in Phase 2 even though several codes have no screen yet. Categories: `project`, `admin`, `audit`, `financial`, `expense`, `vendor_invoice`, `client_invoice`, `reimbursement`, `material_request`, `warehouse`, `shipment`, `material_receipt`, `material_issue`.
 
-Administration codes are seeded but mapped to **no role** in Phase 2 (Superadmin-only writes cover these operations for now): `admin.organization.manage`, `admin.business_unit.manage`, `admin.user.manage`, `admin.membership.manage`, `admin.project.manage`, `admin.role.manage`, `admin.permission.manage`. The generic `user.manage` key is retired as an authorization key. Financial codes are explicit per field group: `financial.cost_view` (F2), `financial.contract_view` (F3), `financial.margin_view` (F4), `financial.collection_view` (F4).
+Every permission carries an explicit `scope` (`platform` | `organization` | `project`) that decides on which plane a role mapping is honored:
+
+| Code group | Scope |
+|---|---|
+| `portfolio.view` | organization |
+| `project.view`, `project.edit`, `project.location.manage` | project |
+| `financial.cost_view`, `financial.contract_view` | project |
+| `financial.margin_view`, `financial.collection_view` | project (may additionally be mapped at organization scope only by explicit executive role assignment) |
+| `audit.view` | organization (project-scoped audit reads use a separate `audit.view_project` code) |
+| `admin.*` | platform |
+| accounting codes (`expense.*`, `vendor_invoice.*`, `client_invoice.*`, `reimbursement.*`) | organization where cross-project by nature, project where the record is project-bound |
+| `material_request.*`, `material_receipt.*`, `material_damage.report`, `material_shortage.report` | project |
+| `warehouse.*`, `shipment.*` | organization (the warehouse serves all projects) |
+
+A project-scoped code mapped to an organization role grants nothing organization-wide; it is only honored inside projects the user actually reaches through §4.4.
+
+Administration codes are seeded but mapped to **no role** in Phase 2 (Superadmin-only writes cover these operations for now): `admin.organization.manage`, `admin.business_unit.manage`, `admin.user.manage`, `admin.membership.manage`, `admin.project.manage`, `admin.role.manage`, `admin.permission.manage`. The generic `user.manage` key is retired as an authorization key. Financial codes are explicit per class: `financial.cost_view` (F2 → `project_cost_financials`), `financial.contract_view` (F3 → `project_contract_financials`), `financial.margin_view` (F4 → `project_executive_financials`), `financial.collection_view` (F4, reserved for future collection entities).
+
 
 Accounting/administrative codes (granular, so Contabilidad does not need a high financial level):
 `expense.view_all`, `expense.invoice_manage`, `expense.payment_view`, `vendor_invoice.view`, `vendor_invoice.create`, `vendor_invoice.validate`, `client_invoice.view`, `client_invoice.manage`, `reimbursement.view`, `reimbursement.update`.
