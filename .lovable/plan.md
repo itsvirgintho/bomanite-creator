@@ -170,7 +170,7 @@ Cecy is explicitly F2: Contabilidad does not automatically imply F4. Contract, e
 
 
 
-## 9. Auth flow and mock-to-real migration
+## 10. Auth flow and mock-to-real migration
 
 Auth: `/auth` becomes real `signInWithPassword`; real `signOut` (cancel queries, clear cache, replace-navigate to `/auth`); password reset via Supabase's built-in reset email (free tier, no paid service). No sign-up UI.
 
