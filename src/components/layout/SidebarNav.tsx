@@ -5,7 +5,6 @@ import { ProjectSwitcher } from "@/components/layout/ProjectSwitcher";
 import { getNavItems, type NavItem } from "@/config/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useProjectContext } from "@/contexts/project-context";
-import { useSession } from "@/contexts/session-context";
 import { profileDisplayName, roleDisplayLabel } from "@/types/authorization";
 
 const GROUP_LABELS: Record<NavItem["group"], string> = {
@@ -19,18 +18,17 @@ const GROUP_ORDER: NavItem["group"][] = ["principal", "operacion", "control", "c
 
 /** Sidebar de escritorio. UI visibility only — NOT authorization. */
 export function SidebarNav() {
-  const { user, demoRole } = useSession();
   const { activeProject } = useProjectContext();
   const { authorizationContext } = useAuth();
 
   const items = getNavItems({
-    role: demoRole,
-    financialLevel: user.financialLevel,
-    hasProject: Boolean(activeProject),
+    context: authorizationContext,
+    activeProject,
     surface: "desktop",
   });
 
   const params = activeProject ? { projectId: activeProject.id } : undefined;
+  const roleLabel = roleDisplayLabel(authorizationContext, activeProject?.id);
 
   return (
     <nav
@@ -80,10 +78,8 @@ export function SidebarNav() {
         <p className="truncate text-sm font-medium">
           {profileDisplayName(authorizationContext?.profile)}
         </p>
-        {roleDisplayLabel(authorizationContext, activeProject?.id) ? (
-          <p className="truncate text-xs text-sidebar-foreground/60">
-            {roleDisplayLabel(authorizationContext, activeProject?.id)}
-          </p>
+        {roleLabel ? (
+          <p className="truncate text-xs text-sidebar-foreground/60">{roleLabel}</p>
         ) : null}
       </div>
     </nav>

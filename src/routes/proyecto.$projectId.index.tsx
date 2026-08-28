@@ -2,28 +2,38 @@ import { createFileRoute } from "@tanstack/react-router";
 import { DirectorProjectHome } from "@/components/home/DirectorProjectHome";
 import { MaestroHome } from "@/components/home/MaestroHome";
 import { ResidentHome } from "@/components/home/ResidentHome";
-import { EmptyState, LoadingState } from "@/components/common/States";
+import { EmptyState } from "@/components/common/States";
 import { useProjectContext } from "@/contexts/project-context";
-import { useSession } from "@/contexts/session-context";
+import { getDemoProject } from "@/mocks";
 
 export const Route = createFileRoute("/proyecto/$projectId/")({
   component: ProjectHome,
 });
 
-/** Home dentro del proyecto, adaptado al rol activo. */
+/**
+ * Home dentro del proyecto.
+ * El contenido sigue siendo DEMO (Fase 1) y no se migra en este paso.
+ * La variante mostrada depende del código de rol real solo como presentación:
+ * no otorga ni infiere permisos.
+ */
 function ProjectHome() {
   const { activeProject } = useProjectContext();
-  const { demoRole, hydrated } = useSession();
 
-  if (!hydrated) return <LoadingState rows={3} />;
-  if (!activeProject) return <EmptyState title="Proyecto no disponible" />;
+  if (!activeProject) return null;
 
-  switch (demoRole) {
-    case "maestro":
-      return <MaestroHome project={activeProject} />;
-    case "director_general":
-      return <DirectorProjectHome project={activeProject} />;
-    default:
-      return <ResidentHome project={activeProject} />;
+  const demoProject = getDemoProject(activeProject.id) ?? getDemoProject("maraluna");
+  if (!demoProject) {
+    return (
+      <EmptyState
+        title={activeProject.name}
+        description="Datos de demostración: el contenido de esta vista aún no está conectado."
+      />
+    );
   }
+
+  const roleCode = activeProject.direct_membership?.role?.code ?? "";
+
+  if (roleCode.startsWith("MAESTRO")) return <MaestroHome project={demoProject} />;
+  if (roleCode.startsWith("DIRECTOR")) return <DirectorProjectHome project={demoProject} />;
+  return <ResidentHome project={demoProject} />;
 }

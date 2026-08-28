@@ -1,17 +1,16 @@
 import { AppLink } from "@/components/common/AppLink";
 import { getNavItems, MOBILE_NAV_LIMIT } from "@/config/navigation";
+import { useAuth } from "@/contexts/auth-context";
 import { useProjectContext } from "@/contexts/project-context";
-import { useSession } from "@/contexts/session-context";
 
 /** Navegación inferior móvil: máximo 5 destinos, objetivos táctiles amplios. */
 export function MobileBottomNav() {
-  const { user, demoRole } = useSession();
   const { activeProject } = useProjectContext();
+  const { authorizationContext } = useAuth();
 
   const items = getNavItems({
-    role: demoRole,
-    financialLevel: user.financialLevel,
-    hasProject: Boolean(activeProject),
+    context: authorizationContext,
+    activeProject,
     surface: "mobile",
   }).slice(0, MOBILE_NAV_LIMIT);
 
