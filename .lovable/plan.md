@@ -206,17 +206,17 @@ Platform administration (run with the two real accounts):
 
 
 
-## 11. Risks and edge cases
+## 13. Risks and edge cases
 
-RLS recursion on membership tables (mitigated by the definer helpers); policy performance on hot paths (indexes on membership `(user_id, project_id) WHERE is_active`); trigger-created profiles failing silently for dashboard users; users with org role but no project membership; clock/timezone handling for starts_at/ends_at; accidental `anon` grants; auth user deletion orphaning history (use deactivation).
+RLS recursion on membership tables (mitigated by the definer helpers); policy performance on hot paths (indexes on membership `(user_id, project_id) WHERE is_active`); trigger-created profiles failing silently for dashboard users; users with org role but no project membership; clock/timezone handling for starts_at/ends_at; accidental `anon` grants; auth user deletion orphaning history (use deactivation); seeded-but-unused permission codes drifting from the future Materials schema (mitigated by section 8b being the contract for that module); shared warehouse logins breaking attributability in production.
 
-## 12. Cost
+## 14. Cost
 
 Supabase Free, current Lovable plan, GitHub Free only. No new paid services and no new frontend dependencies.
 
-## 13. Acceptance checklist
+## 15. Acceptance checklist
 
-- All 13 public tables plus `private.platform_admins` exist with PKs, FKs, uniques, checks, indexes and restrictive deletes.
+- The 13 public core tables plus `private.platform_admins` exist with PKs, FKs, uniques, checks, indexes and restrictive deletes.
 - RLS enabled and explicit GRANTs on every public table; `anon` cannot read any business data; `private.platform_admins` is not reachable from the Data API.
 - Helper functions live in `private`, are SECURITY DEFINER with empty search_path, and are not exposed via the Data API.
 - Superadmin is modeled independently of business role and financial level; F4 and Director General grant no administration.
@@ -224,10 +224,15 @@ Supabase Free, current Lovable plan, GitHub Free only. No new paid services and 
 - Profile auto-created for dashboard-created auth users.
 - Real login, logout and password reset work; no sign-up UI exists.
 - Role/permission/financial-level resolution comes from the database, not from role-name checks in the client.
+- The full permission catalog is seeded, including the accounting and Materials/Warehouse codes listed in section 8, with the stated role defaults.
+- Superintendente de Obra and Almacén exist as real seeded roles; Almacén defaults to F0/F1 with no `financial.*` permissions.
+- Contabilidad is seeded at F2 with granular accounting permissions and no automatic F4.
+- The seven real test identities are configured with the stated roles and levels; no personal emails or passwords appear in seeds or the plan.
 - Two distinct real Supabase accounts (Superadmin and Residente) exist and pass their matrix rows; all privilege-escalation attempts fail.
-- Every item of the security test matrix passes.
-- Navigation config can expose an admin group to Superadmins, but no administration module is built.
-- Phase 1 shell, routes and components still render for all four roles with real data.
+- Every item of the security test matrix passes, including the new Contabilidad, Almacén, Superintendente and Maestro rows.
+- Navigation config is permission-driven and ready for `/administracion`, `/proyecto/$projectId/materiales` and `/almacen`, but none of those screens or routes are built.
+- Phase 1 shell, routes and components still render for all roles with real data.
 - Demo session/role switcher removed only after real auth is confirmed.
-- No operational module tables created; typecheck and build clean.
+- No operational or Materials/Warehouse tables created; typecheck and build clean.
+
 
