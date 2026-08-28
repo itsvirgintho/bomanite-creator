@@ -323,6 +323,8 @@ AS $$
   SELECT
     (SELECT auth.uid()) IS NOT NULL
 
+    AND private.is_active_profile()
+
     AND p_profile_id IS NOT NULL
 
     AND (
@@ -492,7 +494,13 @@ USING (
   (SELECT private.is_active_profile())
 
   AND (
-    user_id = (SELECT auth.uid())
+    (
+      user_id = (SELECT auth.uid())
+
+      AND private.is_organization_member(
+        organization_id
+      )
+    )
 
     OR
 
@@ -544,7 +552,13 @@ USING (
   (SELECT private.is_active_profile())
 
   AND (
-    user_id = (SELECT auth.uid())
+    (
+      user_id = (SELECT auth.uid())
+
+      AND private.is_project_member(
+        project_id
+      )
+    )
 
     OR
 
