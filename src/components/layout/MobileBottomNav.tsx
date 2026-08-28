@@ -32,7 +32,7 @@ export function MobileBottomNav() {
               className="flex min-h-14 flex-col items-center justify-center gap-1 px-1 py-2 text-[0.6875rem] text-muted-foreground data-[status=active]:font-semibold data-[status=active]:text-foreground"
             >
               <item.icon aria-hidden className="h-5 w-5" />
-              <span className="truncate">{item.label}</span>
+              <span className="truncate">{item.shortLabel ?? item.label}</span>
             </AppLink>
           </li>
         ))}

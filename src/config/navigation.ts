@@ -24,6 +24,8 @@ export type NavSurface = "desktop" | "mobile" | "both";
 export interface NavItem {
   id: string;
   label: string;
+  /** Etiqueta corta para la navegación inferior móvil. */
+  shortLabel?: string;
   /** Ruta TanStack. Las rutas de proyecto usan el segmento $projectId. */
   to: string;
   icon: ComponentType<{ className?: string }>;
@@ -49,6 +51,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     id: "proyecto",
     label: "Resumen del proyecto",
+    shortLabel: "Proyecto",
     to: "/proyecto/$projectId",
     icon: Building2,
     roles: ["director_general", "residente", "maestro"],
@@ -131,6 +134,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     id: "contabilidad",
     label: "Contabilidad",
+    shortLabel: "Conta.",
     to: "/contabilidad",
     icon: Wallet,
     roles: ["director_general", "contabilidad"],
