@@ -8,8 +8,10 @@ import { LoadingState } from "@/components/common/States";
 import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import { ProjectSwitcher } from "@/components/layout/ProjectSwitcher";
 import { SidebarNav } from "@/components/layout/SidebarNav";
+import { useAuth } from "@/contexts/auth-context";
 import { useProjectContext } from "@/contexts/project-context";
 import { useSession } from "@/contexts/session-context";
+import { profileDisplayName } from "@/types/authorization";
 
 interface AppShellProps {
   children: ReactNode;
@@ -18,23 +20,51 @@ interface AppShellProps {
 }
 
 export function AppShell({ children, contextLabel }: AppShellProps) {
-  const { user, role, isSignedIn, hydrated } = useSession();
+  const { role } = useSession();
+  const {
+    session,
+    initializing,
+    authorizationContext,
+    loadingContext,
+    contextError,
+    refreshAuthorizationContext,
+  } = useAuth();
   const { activeProject } = useProjectContext();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (hydrated && !isSignedIn) {
+    if (!initializing && !session) {
       void navigate({ to: "/auth", replace: true });
     }
-  }, [hydrated, isSignedIn, navigate]);
+  }, [initializing, session, navigate]);
 
-  if (!hydrated || !isSignedIn) {
+  if (initializing || !session || (loadingContext && !authorizationContext)) {
     return (
       <div className="mx-auto max-w-3xl p-6">
         <LoadingState rows={2} />
       </div>
     );
   }
+
+  if (!authorizationContext) {
+    return (
+      <div className="mx-auto max-w-md p-6 text-center">
+        <h1 className="text-base font-semibold">No pudimos cargar tus permisos</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {contextError ?? "Intenta de nuevo en unos segundos."}
+        </p>
+        <button
+          type="button"
+          onClick={() => void refreshAuthorizationContext()}
+          className="mt-4 min-h-11 rounded-md border border-border-strong px-4 text-sm font-medium hover:bg-muted"
+        >
+          Reintentar
+        </button>
+      </div>
+    );
+  }
+
+  const displayName = profileDisplayName(authorizationContext.profile);
 
   const label = contextLabel ?? activeProject?.name ?? "Vista global";
 
@@ -78,7 +108,7 @@ export function AppShell({ children, contextLabel }: AppShellProps) {
                 className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:border-border-strong"
               >
                 <UserRound aria-hidden className="h-4 w-4" />
-                {user.name}
+                {displayName}
               </Link>
             </div>
           </div>

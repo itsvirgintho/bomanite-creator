@@ -1,8 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Brand } from "@/components/common/Brand";
-import { getHomeRoute, useSession } from "@/contexts/session-context";
+import { useAuth } from "@/contexts/auth-context";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -14,23 +15,51 @@ export const Route = createFileRoute("/auth")({
   component: AuthPage,
 });
 
-/**
- * Pantalla de acceso — Foundation Phase 1.
- * Autenticación simulada: no valida credenciales ni consulta un backend.
- * Se sustituirá por Supabase Auth. No existe registro público.
- */
+/** Acceso con Supabase Auth (correo y contraseña). Sin registro público. */
 function AuthPage() {
-  const { signIn, user } = useSession();
+  const { login, session, initializing, authorizationContext } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    if (!initializing && session && authorizationContext) {
+      void navigate({ to: "/portafolio", replace: true });
+    }
+  }, [initializing, session, authorizationContext, navigate]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    signIn();
-    const home = getHomeRoute(user);
-    void navigate({ to: home.to, params: home.params, replace: true } as never);
+    setError(null);
+    setNotice(null);
+    setSubmitting(true);
+    const result = await login(email.trim(), password);
+    setSubmitting(false);
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
+    void navigate({ to: "/portafolio", replace: true });
+  }
+
+  async function handleReset() {
+    setError(null);
+    setNotice(null);
+    if (!email.trim()) {
+      setError("Escribe tu correo para enviarte el enlace de recuperación.");
+      return;
+    }
+    setResetting(true);
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/auth/reset-password`,
+    });
+    setResetting(false);
+    if (resetError) console.error("[auth] resetPasswordForEmail", resetError.message);
+    setNotice("Si el correo pertenece a una cuenta activa, recibirás instrucciones para restablecer la contraseña.");
   }
 
   return (
@@ -80,20 +109,26 @@ function AuthPage() {
 
           <button
             type="submit"
-            className="min-h-11 w-full rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-95"
+            disabled={submitting}
+            className="min-h-11 w-full rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-95 disabled:opacity-60"
           >
-            Entrar
+            {submitting ? "Verificando…" : "Entrar"}
           </button>
 
           <button
             type="button"
-            onClick={() =>
-              setNotice("La recuperación de contraseña se habilitará al conectar la autenticación real.")
-            }
-            className="w-full text-center text-sm text-muted-foreground underline underline-offset-4"
+            onClick={() => void handleReset()}
+            disabled={resetting}
+            className="w-full text-center text-sm text-muted-foreground underline underline-offset-4 disabled:opacity-60"
           >
-            ¿Olvidaste tu contraseña?
+            {resetting ? "Enviando…" : "¿Olvidaste tu contraseña?"}
           </button>
+
+          {error ? (
+            <p role="alert" className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
+              {error}
+            </p>
+          ) : null}
 
           {notice ? (
             <p role="status" className="rounded-md border border-border bg-muted px-3 py-2 text-xs">
@@ -102,10 +137,6 @@ function AuthPage() {
           ) : null}
         </form>
 
-        <p className="mt-4 rounded-md border border-dashed border-border-strong bg-muted px-3 py-2 text-xs text-muted-foreground">
-          Fase 1: el acceso es simulado y no valida credenciales. El rol de demostración se cambia en
-          Perfil.
-        </p>
         <p className="mt-3 text-xs text-muted-foreground">
           No hay registro público. Las cuentas las crea Sistemas.
         </p>
