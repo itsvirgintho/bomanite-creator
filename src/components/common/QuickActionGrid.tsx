@@ -4,7 +4,7 @@ import { AppLink } from "@/components/common/AppLink";
 export interface QuickAction {
   id: string;
   label: string;
-  icon: ComponentType<{ className?: string }> | undefined;
+  icon: ComponentType<{ className?: string }>;
   to: string;
   params?: Record<string, string> | undefined;
 }
