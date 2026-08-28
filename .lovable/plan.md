@@ -165,21 +165,20 @@ Each step is a separate migration presented for approval. The identity bootstrap
 
 The catalog is seeded in full in Phase 2 even though several codes have no screen yet. Categories: `project`, `admin`, `audit`, `financial`, `expense`, `vendor_invoice`, `client_invoice`, `reimbursement`, `material_request`, `warehouse`, `shipment`, `material_receipt`, `material_issue`.
 
-Every permission carries an explicit `scope` (`platform` | `organization` | `project`) that decides on which plane a role mapping is honored:
+Codes are scope-free. Scope is recorded per mapping in `role_permissions.scope`, so the same code can be organization-scoped for one role and project-scoped for another. Typical seeded mappings:
 
-| Code group | Scope |
-|---|---|
-| `portfolio.view` | organization |
-| `project.view`, `project.edit`, `project.location.manage` | project |
-| `financial.cost_view`, `financial.contract_view` | project |
-| `financial.margin_view`, `financial.collection_view` | project (may additionally be mapped at organization scope only by explicit executive role assignment) |
-| `audit.view` | organization (project-scoped audit reads use a separate `audit.view_project` code) |
-| `admin.*` | platform |
-| accounting codes (`expense.*`, `vendor_invoice.*`, `client_invoice.*`, `reimbursement.*`) | organization where cross-project by nature, project where the record is project-bound |
-| `material_request.*`, `material_receipt.*`, `material_damage.report`, `material_shortage.report` | project |
-| `warehouse.*`, `shipment.*` | organization (the warehouse serves all projects) |
+| Role | Codes | Mapping scope |
+|---|---|---|
+| Director General | `portfolio.view`, `financial.cost_view`, `financial.contract_view`, `financial.margin_view`, `financial.collection_view` where appropriate, executive/reporting codes | organization |
+| Contabilidad | accounting codes (`expense.*`, `vendor_invoice.*`, `client_invoice.*`, `reimbursement.*`) | organization |
+| Almacén | `warehouse.*`, `shipment.*` | organization |
+| Superintendente de Obra | `project.view`, operational project codes, `material_request.view_project`, `.review`, `.approve`, `.reject`, `.return` | project |
+| Residente de Obra | `project.view`, `material_request.create/.submit/.view_own/.view_project`, `material_receipt.confirm`, `material_damage.report`, `material_shortage.report`, and `financial.cost_view` only if explicitly intended | project |
+| Maestro de Obra | `project.view`, `material_request.create/.submit/.view_own`, `material_receipt.confirm`, `material_damage.report`, `material_shortage.report` | project |
+| (none in Phase 2) | `admin.*` | platform |
 
-A project-scoped code mapped to an organization role grants nothing organization-wide; it is only honored inside projects the user actually reaches through §4.4.
+A project-scoped mapping grants nothing organization-wide; it is only honored inside projects the user actually reaches through §4.4. An organization-scoped mapping is honored only when the org membership has a non-null role.
+
 
 Administration codes are seeded but mapped to **no role** in Phase 2 (Superadmin-only writes cover these operations for now): `admin.organization.manage`, `admin.business_unit.manage`, `admin.user.manage`, `admin.membership.manage`, `admin.project.manage`, `admin.role.manage`, `admin.permission.manage`. The generic `user.manage` key is retired as an authorization key. Financial codes are explicit per class: `financial.cost_view` (F2 → `project_cost_financials`), `financial.contract_view` (F3 → `project_contract_financials`), `financial.margin_view` (F4 → `project_executive_financials`), `financial.collection_view` (F4, reserved for future collection entities).
 
