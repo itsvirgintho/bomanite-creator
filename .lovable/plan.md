@@ -253,22 +253,30 @@ Supabase Free, current Lovable plan, GitHub Free only. No new paid services and 
 ## 15. Acceptance checklist
 
 - The 13 public core tables plus `private.platform_admins` exist with PKs, FKs, uniques, checks, indexes and restrictive deletes.
-- RLS enabled and explicit GRANTs on every public table; `anon` cannot read any business data; `private.platform_admins` is not reachable from the Data API.
-- Helper functions live in `private`, are SECURITY DEFINER with empty search_path, and are not exposed via the Data API.
-- Superadmin is modeled independently of business role and financial level; F4 and Director General grant no administration.
+- Every public table has explicit REVOKE/GRANT statements for `anon`, `authenticated` and `service_role`, plus RLS enabled and policies; nothing relies on Supabase default privileges. `anon` holds no privilege on any DFN business table.
+- Security-bearing tables (`organization_members`, `project_members`, overrides, `roles`, `role_permissions`, `project_financials`) have no client mutation grant at all.
+- `private` is not in the Data API exposed schemas; `authenticated` has `USAGE ON SCHEMA private` and per-function `EXECUTE` only on the named policy helpers, and RLS queries actually succeed for signed-in users.
+- Privileged mutation functions are revoked from `authenticated`; the only client-callable protected mutation is `public.update_own_profile`, restricted to first_name, last_name, phone and avatar_path for `auth.uid()`.
+- All `private` functions are `search_path = ''`, fully qualified, and SECURITY DEFINER only where RLS recursion/bypass genuinely requires it.
+- 12 business roles are seeded; every reference to 11 has been corrected; Superadmin is not a business role.
+- Phase 2 sensitive administrative writes are Superadmin-only; `admin.*` delegated codes are seeded but mapped to no role; Director General F4 grants no administration.
+- `project_financials` reads require both a financial level and an explicit financial permission per field group; Contabilidad at F2 and Almacén at F0/F1 return 0 rows.
+- Superadmin has no blanket `is_superadmin() OR ...` SELECT on business tables; audit read is the only documented global exception.
+- No views are created; any future view is `security_invoker = true`.
+- No ambiguous `private.current_org()` exists; organization_id is always explicit.
 - No BYPASSRLS database role is used from the browser; no service-role credential appears in frontend code.
 - Profile auto-created for dashboard-created auth users.
 - Real login, logout and password reset work; no sign-up UI exists.
 - Role/permission/financial-level resolution comes from the database, not from role-name checks in the client.
-- The full permission catalog is seeded, including the accounting and Materials/Warehouse codes listed in section 8, with the stated role defaults.
-- Superintendente de Obra and Almacén exist as real seeded roles; Almacén defaults to F0/F1 with no `financial.*` permissions.
-- Contabilidad is seeded at F2 with granular accounting permissions and no automatic F4.
-- The seven real test identities are configured with the stated roles and levels; no personal emails or passwords appear in seeds or the plan.
-- Two distinct real Supabase accounts (Superadmin and Residente) exist and pass their matrix rows; all privilege-escalation attempts fail.
-- Every item of the security test matrix passes, including the new Contabilidad, Almacén, Superintendente and Maestro rows.
+- The full permission catalog is seeded, including accounting, admin and Materials/Warehouse codes, with the stated role defaults.
+- Superintendente de Obra and Almacén exist as real seeded roles; Almacén defaults to F0/F1 with no `financial.*` permissions; Contabilidad is F2.
+- Seed/migration files contain no personal emails, names or passwords; identities are attached by UUID through a separate one-time bootstrap script.
+- The seven real test identities are configured; two distinct real Supabase accounts (Superadmin and Residente) pass their matrix rows; all privilege-escalation attempts fail.
+- Every item of the security test matrix passes, including the grant/helper-privilege tests.
 - Navigation config is permission-driven and ready for `/administracion`, `/proyecto/$projectId/materiales` and `/almacen`, but none of those screens or routes are built.
 - Phase 1 shell, routes and components still render for all roles with real data.
 - Demo session/role switcher removed only after real auth is confirmed.
 - No operational or Materials/Warehouse tables created; typecheck and build clean.
+
 
 
