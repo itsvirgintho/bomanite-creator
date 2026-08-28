@@ -292,8 +292,9 @@ Grants and helper-privilege tests:
 - Resident updates `phone` via `update_own_profile` successfully, and cannot change `is_active` or `employee_code` by any path (no UPDATE grant on `public.profiles`).
 - Resident's direct INSERT/UPDATE on `organization_members`, `project_members`, overrides, `roles`, `role_permissions` fails at the GRANT level, not just RLS.
 - Director F4 (non-Superadmin) cannot administer RBAC or memberships.
-- Cecy's accounting permissions return 0 rows from `project_financials` at F2; Almacén returns 0 rows.
-- Superadmin platform status alone returns 0 `project_financials` rows without a separately assigned membership and level.
+- Cecy's accounting permissions return 0 rows from the contract and executive financial tables at F2; Almacén returns 0 rows from all three.
+- Superadmin platform status alone returns 0 rows from all three financial tables without a separately assigned membership and level.
+
 - If any view exists, it is `security_invoker = true` and returns caller-scoped rows.
 
 
