@@ -256,13 +256,28 @@ Role visibility additions for the new real roles: Superintendente de Obra sees p
 
 ## 12. Security test matrix
 
-Business access: Director reads all org projects and financials; Residente reads assigned project, 0 rows for unrelated project; Maestro assigned project only and `project_financials` returns 0 rows; Contabilidad cross-project financial reads at its level; Anonymous 0 rows everywhere. Plus expired membership → no access; inactive membership → no access; override deny removes a role-granted permission; override allow grants one; unauthorized project URL renders the unavailable state; direct PostgREST query with a known UUID returns empty.
+Business access: Pablo (Director, org role + `portfolio.view`) reaches all org projects and reads the financial classes his explicit permissions cover; Residente reads assigned project only, 0 rows for any unrelated project; Maestro assigned project only and 0 rows from all three financial tables; Anonymous 0 rows everywhere. Plus expired membership → no access; inactive membership → no access; override deny removes a role-granted project permission; override allow grants one; unauthorized project URL renders the unavailable state; direct PostgREST query with a known UUID returns empty.
 
-New role tests:
-- Cecy (Contabilidad, F2): holds the accounting permission codes; `project_financials` contract/margin reads return 0 rows at F2; holds no warehouse or shipment permission.
-- Warehouse user (Almacén, F0/F1): holds only warehouse/shipment codes; `project_financials` returns 0 rows; cannot read contract value, unit prices, margin or collections; cannot approve material requests.
+Scope and membership-plane tests:
+- Diego Residente: organization membership exists with `role_id = NULL`; only the Maraluna project membership grants access; any other DFN project returns zero rows; adding/keeping an organization membership alone never creates project access; at F2 he reads `project_cost_financials` for Maraluna only if his project role explicitly holds `financial.cost_view`, and reads 0 rows from contract and executive tables.
+- Miguel: Superintendente permissions apply only inside explicitly assigned projects; unassigned projects return zero rows unless a separately configured organization-level role is granted.
+- Pablo: the organization Director role with `portfolio.view` grants the intended portfolio/global project access.
+- Cecy: organization-scoped Contabilidad permissions support cross-project accounting flows; F2 accounting access exposes neither `project_contract_financials` nor `project_executive_financials`.
+- Almacén: organization-scoped warehouse permission may expose the future cross-project warehouse queue; all three financial tables return 0 rows.
+- A project-scoped permission mapped onto an organization role does not grant organization-wide project access.
+
+Financial-table isolation tests:
+- An F2 user with `financial.cost_view` reads allowed `project_cost_financials` rows and gets 0 rows / permission denied from contract and executive tables.
+- An F3 user does not automatically read the executive table.
+- An F4 user without the explicit `financial.margin_view` permission is denied the executive table.
+- Superadmin platform status alone returns 0 rows from all three financial tables.
+
+Role tests:
+- Cecy (Contabilidad, F2): holds the accounting permission codes; holds no warehouse or shipment permission.
+- Warehouse user (Almacén, F0/F1): holds only warehouse/shipment codes; cannot read contract value, unit prices, margin or collections; cannot approve material requests.
 - Superintendente (Miguel Ángel Tobón, F3): holds review/approve/reject/return codes; no warehouse codes; no platform administration.
 - Maestro (Ricardo, F1): requester/receiver codes only; no approval, warehouse or financial codes.
+
 
 Platform administration (run with the two real accounts):
 - Account A (Superadmin): can perform permitted administrative writes through the approved protected paths; sees the administration navigation; reads business/financial data only through its separately assigned Director General + F4 membership, except the documented audit-read policy.
