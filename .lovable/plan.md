@@ -114,20 +114,63 @@ Dependency graph (avoids recursion): policies on business tables call `private.*
 
 Each step is a separate migration presented for approval.
 
-## 8. Seed / reference data
+## 8. Permission catalog (including Materials/Warehouse readiness)
 
-Seed only: the DFN Desarrollo e Infraestructura organization, the two business units, the 11 roles with default financial levels, the full permission catalog, and role→permission mappings. No fake projects or financials. The org UUID is never hard-coded in the frontend; the client resolves it from the user's `organization_members` row.
+The catalog is seeded in full in Phase 2 even though several codes have no screen yet. Categories: `project`, `user`, `audit`, `financial`, `expense`, `vendor_invoice`, `client_invoice`, `reimbursement`, `material_request`, `warehouse`, `shipment`, `material_receipt`, `material_issue`.
 
-Initial users: created manually in the Supabase dashboard — no privileged admin-user code in this phase. Memberships and the first `platform_admins` row are attached by a small, reviewed SQL statement referencing emails, not by the app.
+Accounting/administrative codes (granular, so Contabilidad does not need a high financial level):
+`expense.view_all`, `expense.invoice_manage`, `expense.payment_view`, `vendor_invoice.view`, `vendor_invoice.create`, `vendor_invoice.validate`, `client_invoice.view`, `client_invoice.manage`, `reimbursement.view`, `reimbursement.update`.
 
-Two real owner accounts (mandatory for Phase 2 testing, never simulated with DemoRoleSwitcher once real auth is on):
-- **Account A — Superadmin**: active row in `private.platform_admins` (`superadmin`), plus an explicitly assigned Director General organization membership at F4 for business testing.
-- **Account B — Residente**: no platform-admin row, membership only in the selected test project with the Residente de Obra role and an explicitly configured financial level (F2 or F3), no access to administration or unrelated projects.
+Materials/Warehouse codes (future-ready, unused by Phase 2 screens):
+`material_request.create`, `material_request.submit`, `material_request.view_own`, `material_request.view_project`, `material_request.review`, `material_request.approve`, `material_request.reject`, `material_request.return`, `warehouse.request_view`, `warehouse.prepare`, `warehouse.mark_ready`, `warehouse.dispatch`, `shipment.create`, `shipment.view`, `shipment.update`, `material_receipt.create`, `material_receipt.confirm`, `material_damage.report`, `material_shortage.report`.
 
-Optional additional test identities: Maestro and Contabilidad, configured the same way.
+Default role→permission mappings seeded now:
+- Maestro de Obra: `material_request.create`, `.submit`, `.view_own`, `material_receipt.confirm`, `material_damage.report`, `material_shortage.report`.
+- Residente de Obra: the Maestro requester/receiver set plus `material_request.view_project`.
+- Superintendente de Obra: `material_request.view_project`, `.review`, `.approve`, `.reject`, `.return`.
+- Director General / authorized management: approval permissions, applied per organization/project policy rather than assumed.
+- Almacén: `warehouse.request_view`, `warehouse.prepare`, `warehouse.mark_ready`, `warehouse.dispatch`, `shipment.create`, `shipment.view`, `shipment.update`.
+- Contabilidad: the accounting/administrative codes above; no warehouse or shipment permissions.
+
+Financial level stays independent of these codes: a permission grants an action, the level gates money visibility.
+
+## 8b. Future Materials/Warehouse domain (NOT built in Phase 2)
+
+Recorded so the RBAC seeded now stays correct; no tables are created in this phase.
+
+Flow: Maestro/Residente draft → submit → approval by Superintendente and/or Director per configurable project policy (superintendent only, director only, either authorized approver, or superintendent then director) → warehouse queue → stock check → preparing → partially prepared or ready → shipment created → dispatched → in transit → delivered → site confirmation → received OK or received with damage/shortage → closed only when outstanding problems are resolved.
+
+Modeling rules to honor later: a request carries project, location, optional activity/concept, requester, requested date, required-by date, urgency, notes and attachments; each request item tracks requested, approved, prepared, dispatched, received, damaged, missing and backordered quantities independently — never a single generic quantity/status. A request may have multiple shipments, so tracking/guide numbers live on `material_shipments` (carrier, internal driver, vehicle, tracking number, dispatch timestamp, ETA, actual delivery, status, evidence, notes), not on the request. Receipts are recorded per item with dispatched/received/damaged/missing quantities, condition, comments and photographic evidence. Status/event history is preserved in dedicated history tables so a timeline (Requested → Approved → Preparing → Ready → Dispatched → In transit → Delivered → Received) with user and timestamp can be rendered. Notification events for requester, approver and warehouse are anticipated by the permission model but no notification logic is built.
+
+Anticipated future entities: `material_requests`, `material_request_items`, `material_request_approvals`, `material_request_status_history`, `material_shipments`, `material_shipment_items`, `shipment_status_history`, `material_receipts`, `material_receipt_items`, `material_damage_reports` (+ attachments). None created in Phase 2.
+
+Warehouse users must never automatically see contract value, unit prices sold to the client, project margin, collections or executive financial data — hence F0/F1 and no `financial.*` permissions. Production warehouse access should use individual named users with the Almacén role so preparation and dispatch actions remain attributable; a generic warehouse identity is acceptable only in development.
+
+## 9. Seed / reference data
+
+Seed only: the DFN Desarrollo e Infraestructura organization, the two business units, the approved roles (including Superintendente de Obra and Almacén as confirmed real roles) with default financial levels, the full permission catalog above, and role→permission mappings. No fake projects or financials. The org UUID is never hard-coded in the frontend; the client resolves it from the user's `organization_members` row.
+
+Initial users: created manually in the Supabase dashboard — no privileged admin-user code in this phase. Memberships and the first `platform_admins` row are attached by a small, reviewed SQL statement referencing emails, not by the app. No personal emails or passwords are stored in the plan or in seed SQL.
+
+Real test identity matrix (all non-Superadmin unless stated):
+
+| Identity | Role | Financial level | Platform Superadmin |
+|---|---|---|---|
+| Diego (admin account) | platform administration only | none by itself; Director General + F4 may be assigned explicitly for business testing | Yes |
+| Pablo Avilés | Director General | F4 | No |
+| Miguel Ángel Tobón | Superintendente de Obra | F3 | No |
+| Diego (second account) | Residente de Obra | F2 | No |
+| Ricardo | Maestro de Obra | F1 | No |
+| Cecy | Contabilidad | F2 | No |
+| Warehouse test user | Almacén | F0/F1 | No |
+
+The two mandatory owner accounts remain distinct real Supabase Auth users and are never simulated with DemoRoleSwitcher once real auth is on: Account A = Diego Superadmin; Account B = Diego Residente scoped to the selected test project only.
+
+Cecy is explicitly F2: Contabilidad does not automatically imply F4. Contract, estimate and collection visibility is granted later only by explicit level/permission changes.
 
 
-## 9. Auth flow and mock-to-real migration
+
+## 10. Auth flow and mock-to-real migration
 
 Auth: `/auth` becomes real `signInWithPassword`; real `signOut` (cancel queries, clear cache, replace-navigate to `/auth`); password reset via Supabase's built-in reset email (free tier, no paid service). No sign-up UI.
 
@@ -139,28 +182,41 @@ Staged migration, demo system stays until each stage is green:
 5. `ProjectSwitcher` and `/proyecto/$projectId` load only authorized projects; an unauthorized/unknown id renders "Proyecto no disponible o sin acceso" (no content leak, no distinction fishing).
 6. Once verified, remove `DemoRoleSwitcher`, demo users/projects from `src/mocks`, and the mock branches — keeping only clearly labeled demo data for still-mocked operational widgets, or removing the "Datos de demostración" notice where data is now real.
 
-## 10. Security test matrix
+## 11. Navigation readiness (no screens built)
+
+`src/config/navigation.ts` gains permission-driven, not role-name-driven, entries that stay hidden until the real access context reports the codes: project materials `/proyecto/$projectId/materiales` (shown with `material_request.view_own` or `.view_project`) and global warehouse `/almacen` (shown with `warehouse.request_view`), plus the Superadmin `administracion` group. Route files and module screens are NOT created in Phase 2; the config entries stay inert until the modules exist.
+
+Role visibility additions for the new real roles: Superintendente de Obra sees project operational destinations plus approval-oriented entries later; Almacén sees only global warehouse plus profile — no portfolio, no estimates, no financial destinations.
+
+## 12. Security test matrix
 
 Business access: Director reads all org projects and financials; Residente reads assigned project, 0 rows for unrelated project; Maestro assigned project only and `project_financials` returns 0 rows; Contabilidad cross-project financial reads at its level; Anonymous 0 rows everywhere. Plus expired membership → no access; inactive membership → no access; override deny removes a role-granted permission; override allow grants one; unauthorized project URL renders the unavailable state; direct PostgREST query with a known UUID returns empty.
+
+New role tests:
+- Cecy (Contabilidad, F2): holds the accounting permission codes; `project_financials` contract/margin reads return 0 rows at F2; holds no warehouse or shipment permission.
+- Warehouse user (Almacén, F0/F1): holds only warehouse/shipment codes; `project_financials` returns 0 rows; cannot read contract value, unit prices, margin or collections; cannot approve material requests.
+- Superintendente (Miguel Ángel Tobón, F3): holds review/approve/reject/return codes; no warehouse codes; no platform administration.
+- Maestro (Ricardo, F1): requester/receiver codes only; no approval, warehouse or financial codes.
 
 Platform administration (run with the two real accounts):
 - Account A (Superadmin): can perform permitted administrative writes through the approved protected paths; sees the administration navigation; reads business/financial data only through its separately assigned Director General + F4 membership, except the documented audit-read policy.
 - Director non-Superadmin: F4 grants no administration; cannot change roles, permissions, memberships or financial levels.
 - Account B (Residente): `private.platform_admins` is unreadable (function/table not in the API); admin navigation hidden and admin URLs render unauthorized; cannot assign roles, modify memberships, change financial levels or view unrelated projects; direct Supabase API attempts blocked by grants/RLS.
-- Privilege escalation (all must fail): insert self into platform_admins; modify own organization_members row; change own role_id; raise own financial_level; insert a project_members row for self; insert a permission override for self.
+- Privilege escalation (all must fail): insert self into platform_admins; modify own organization_members row; change own role_id; raise own financial_level; insert a project_members row for self; insert a permission override for self; grant self any material_request approval or warehouse permission.
 
 
-## 11. Risks and edge cases
 
-RLS recursion on membership tables (mitigated by the definer helpers); policy performance on hot paths (indexes on membership `(user_id, project_id) WHERE is_active`); trigger-created profiles failing silently for dashboard users; users with org role but no project membership; clock/timezone handling for starts_at/ends_at; accidental `anon` grants; auth user deletion orphaning history (use deactivation).
+## 13. Risks and edge cases
 
-## 12. Cost
+RLS recursion on membership tables (mitigated by the definer helpers); policy performance on hot paths (indexes on membership `(user_id, project_id) WHERE is_active`); trigger-created profiles failing silently for dashboard users; users with org role but no project membership; clock/timezone handling for starts_at/ends_at; accidental `anon` grants; auth user deletion orphaning history (use deactivation); seeded-but-unused permission codes drifting from the future Materials schema (mitigated by section 8b being the contract for that module); shared warehouse logins breaking attributability in production.
+
+## 14. Cost
 
 Supabase Free, current Lovable plan, GitHub Free only. No new paid services and no new frontend dependencies.
 
-## 13. Acceptance checklist
+## 15. Acceptance checklist
 
-- All 13 public tables plus `private.platform_admins` exist with PKs, FKs, uniques, checks, indexes and restrictive deletes.
+- The 13 public core tables plus `private.platform_admins` exist with PKs, FKs, uniques, checks, indexes and restrictive deletes.
 - RLS enabled and explicit GRANTs on every public table; `anon` cannot read any business data; `private.platform_admins` is not reachable from the Data API.
 - Helper functions live in `private`, are SECURITY DEFINER with empty search_path, and are not exposed via the Data API.
 - Superadmin is modeled independently of business role and financial level; F4 and Director General grant no administration.
@@ -168,10 +224,15 @@ Supabase Free, current Lovable plan, GitHub Free only. No new paid services and 
 - Profile auto-created for dashboard-created auth users.
 - Real login, logout and password reset work; no sign-up UI exists.
 - Role/permission/financial-level resolution comes from the database, not from role-name checks in the client.
+- The full permission catalog is seeded, including the accounting and Materials/Warehouse codes listed in section 8, with the stated role defaults.
+- Superintendente de Obra and Almacén exist as real seeded roles; Almacén defaults to F0/F1 with no `financial.*` permissions.
+- Contabilidad is seeded at F2 with granular accounting permissions and no automatic F4.
+- The seven real test identities are configured with the stated roles and levels; no personal emails or passwords appear in seeds or the plan.
 - Two distinct real Supabase accounts (Superadmin and Residente) exist and pass their matrix rows; all privilege-escalation attempts fail.
-- Every item of the security test matrix passes.
-- Navigation config can expose an admin group to Superadmins, but no administration module is built.
-- Phase 1 shell, routes and components still render for all four roles with real data.
+- Every item of the security test matrix passes, including the new Contabilidad, Almacén, Superintendente and Maestro rows.
+- Navigation config is permission-driven and ready for `/administracion`, `/proyecto/$projectId/materiales` and `/almacen`, but none of those screens or routes are built.
+- Phase 1 shell, routes and components still render for all roles with real data.
 - Demo session/role switcher removed only after real auth is confirmed.
-- No operational module tables created; typecheck and build clean.
+- No operational or Materials/Warehouse tables created; typecheck and build clean.
+
 
