@@ -19,6 +19,6 @@ interface AppLinkProps {
  * Las rutas estáticas deben seguir usando <Link> directamente.
  */
 export function AppLink({ to, params, ...rest }: AppLinkProps) {
-  const routerProps = { to, params } as unknown as LinkProps;
-  return <Link {...routerProps} {...rest} />;
+  const routerProps = { to, params, ...rest } as unknown as LinkProps;
+  return <Link {...routerProps} />;
 }
