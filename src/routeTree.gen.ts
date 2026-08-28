@@ -14,6 +14,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as ContabilidadRouteImport } from './routes/contabilidad'
 import { Route as PerfilRouteImport } from './routes/perfil'
 import { Route as PortafolioRouteImport } from './routes/portafolio'
+import { Route as ProyectoProjectIdRouteImport } from './routes/proyecto.$projectId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -40,6 +41,11 @@ const PortafolioRoute = PortafolioRouteImport.update({
   path: '/portafolio',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProyectoProjectIdRoute = ProyectoProjectIdRouteImport.update({
+  id: '/proyecto/$projectId',
+  path: '/proyecto/$projectId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -47,6 +53,7 @@ export interface FileRoutesByFullPath {
   '/contabilidad': typeof ContabilidadRoute
   '/perfil': typeof PerfilRoute
   '/portafolio': typeof PortafolioRoute
+  '/proyecto/$projectId': typeof ProyectoProjectIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,6 +61,7 @@ export interface FileRoutesByTo {
   '/contabilidad': typeof ContabilidadRoute
   '/perfil': typeof PerfilRoute
   '/portafolio': typeof PortafolioRoute
+  '/proyecto/$projectId': typeof ProyectoProjectIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -62,13 +70,33 @@ export interface FileRoutesById {
   '/contabilidad': typeof ContabilidadRoute
   '/perfil': typeof PerfilRoute
   '/portafolio': typeof PortafolioRoute
+  '/proyecto/$projectId': typeof ProyectoProjectIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/contabilidad' | '/perfil' | '/portafolio'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/contabilidad'
+    | '/perfil'
+    | '/portafolio'
+    | '/proyecto/$projectId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/contabilidad' | '/perfil' | '/portafolio'
-  id: '__root__' | '/' | '/auth' | '/contabilidad' | '/perfil' | '/portafolio'
+  to:
+    | '/'
+    | '/auth'
+    | '/contabilidad'
+    | '/perfil'
+    | '/portafolio'
+    | '/proyecto/$projectId'
+  id:
+    | '__root__'
+    | '/'
+    | '/auth'
+    | '/contabilidad'
+    | '/perfil'
+    | '/portafolio'
+    | '/proyecto/$projectId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -77,6 +105,7 @@ export interface RootRouteChildren {
   ContabilidadRoute: typeof ContabilidadRoute
   PerfilRoute: typeof PerfilRoute
   PortafolioRoute: typeof PortafolioRoute
+  ProyectoProjectIdRoute: typeof ProyectoProjectIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -116,6 +145,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PortafolioRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/proyecto/$projectId': {
+      id: '/proyecto/$projectId'
+      path: '/proyecto/$projectId'
+      fullPath: '/proyecto/$projectId'
+      preLoaderRoute: typeof ProyectoProjectIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -125,6 +161,7 @@ const rootRouteChildren: RootRouteChildren = {
   ContabilidadRoute: ContabilidadRoute,
   PerfilRoute: PerfilRoute,
   PortafolioRoute: PortafolioRoute,
+  ProyectoProjectIdRoute: ProyectoProjectIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
