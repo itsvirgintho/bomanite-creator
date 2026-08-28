@@ -10,6 +10,21 @@ Core backend + real authorization. Replaces the mocked identity/project foundati
 - Permissions are a catalog + role mappings + per-project-member overrides. No role-name string checks in code; the client uses permission codes only for UI visibility.
 - All privileged helper logic lives in a non-exposed `private` schema, `SECURITY DEFINER`, `set search_path = ''`, fully qualified names, `REVOKE EXECUTE FROM anon, authenticated` where possible (policies run as definer-owner and can still call them).
 - Sensitive money lives only in `project_financials`, gated separately from `projects`.
+- **Platform administration is a third, independent plane** (`private.platform_admins`), unrelated to business role and financial level. See section 2b.
+
+### 2b. Platform Superadmin layer
+
+`private.platform_admins` (not in `public`, not exposed through the Data API, no grants to `anon`/`authenticated`): id, user_id FK → auth.users (ON DELETE CASCADE), admin_level (CHECK in ('superadmin') for now, extensible), is_active, created_at, created_by. Partial unique on (user_id) WHERE is_active.
+
+Separation rules:
+- Superadmin ≠ Director General, ≠ F4, ≠ any org or project role. F4 never implies administration; administration never implies financial visibility.
+- A Superadmin who must also see business data receives an explicit organization membership (e.g. Director General + F4). Business reads stay governed by the normal membership/financial policies.
+- Helper: `private.is_superadmin(_user_id uuid default auth.uid())` — STABLE, SECURITY DEFINER, `search_path = ''`, fully qualified `private.platform_admins`, returns true only for an active row. `REVOKE EXECUTE ON FUNCTION private.is_superadmin FROM public, anon, authenticated;` policies call it as the definer owner. It returns a boolean only — it can never be used to read or mutate data by itself.
+- RLS behavior: no BYPASSRLS role is ever used from the browser. Administration is expressed as additional explicit policies on the administrative tables (organizations, business_units, profiles activation, organization_members, project_members, overrides, roles, role_permissions, projects, project_financials write, audit read) with `USING (private.is_superadmin())`. Superadmin does **not** get a blanket read of every business table unless a policy documents it (audit read is the documented exception).
+- Auth user management (future, not built in Phase 2): Superadmin browser → authenticated TanStack server function → verify `private.is_superadmin()` server-side → call the Supabase Auth admin API with the service-role key held only in the server runtime → create/invite/deactivate. The secret never reaches frontend code, and the client never calls the admin API directly. For Phase 2, test users are created manually in the Supabase dashboard.
+- Navigation readiness only: `src/config/navigation.ts` gains an `admin` group (`/administracion`, `/usuarios`, `/roles`, `/proyectos`, `/permisos`) rendered solely when the access context reports `isSuperadmin`. The routes and module screens are not built in Phase 2.
+
+
 
 ## 2. Tables and fields
 
@@ -69,13 +84,17 @@ organizations 1─* audit_logs *─0..1 projects
 | project_members | own rows or `user.manage` in that project | `user.manage` |
 | overrides | via parent member visibility | `user.manage` |
 | project_locations | `private.can_access_project(project_id)` | `project.edit` |
-| audit_logs | `audit.view` scoped to org/project | INSERT only via definer functions; no UPDATE/DELETE |
+| audit_logs | `audit.view` scoped to org/project, or Superadmin | INSERT only via definer functions; no UPDATE/DELETE |
+| private.platform_admins | none from the client (no grants, not in the API) | none from the client; managed by migration or a verified server function |
 
-Dependency graph (avoids recursion): policies on business tables call `private.*` SECURITY DEFINER helpers, which read membership tables directly with RLS bypassed. Membership tables' own policies use only `auth.uid()` comparisons or a single non-recursive `private.has_org_permission` that reads `organization_members` as definer — never a policy on the same table it queries.
+Each administrative table also carries an explicit `private.is_superadmin()` policy for write operations, in addition to the `user.manage` business path. No client-side database role has BYPASSRLS.
+
+Dependency graph (avoids recursion): policies on business tables call `private.*` SECURITY DEFINER helpers, which read membership tables directly with RLS bypassed. Membership tables' own policies use only `auth.uid()` comparisons, `private.is_superadmin()`, or a single non-recursive `private.has_org_permission` that reads `organization_members` as definer — never a policy on the same table it queries. `private.platform_admins` has no policies reachable from the client at all, so `is_superadmin` cannot recurse.
 
 ## 6. Helper functions (schema `private`)
 
-`is_organization_member(org)`, `has_org_permission(code)`, `is_project_member(project)`, `can_access_project(project)`, `has_project_permission(project, code)`, `financial_access_level(project)`, `current_org()`. All STABLE, SECURITY DEFINER, `set search_path = ''`. Reason: single source of truth, keeps policies short, and prevents recursive membership evaluation.
+`is_superadmin(user_id)`, `is_organization_member(org)`, `has_org_permission(code)`, `is_project_member(project)`, `can_access_project(project)`, `has_project_permission(project, code)`, `financial_access_level(project)`, `current_org()`. All STABLE, SECURITY DEFINER, `set search_path = ''`, fully qualified, EXECUTE revoked from `public`/`anon`/`authenticated`. Reason: single source of truth, keeps policies short, prevents recursive membership evaluation, and keeps admin status unreadable by ordinary users.
+
 
 ## 7. Migration order (small, reviewable)
 
@@ -88,9 +107,10 @@ Dependency graph (avoids recursion): policies on business tables call `private.*
 7. project_members, overrides.
 8. project_locations (+ cycle trigger).
 9. audit_logs + audit write function/triggers.
-10. private helper functions.
-11. GRANTs + RLS policies for all of the above.
-12. Seed reference data.
+10. `private.platform_admins`.
+11. private helper functions (including `is_superadmin`).
+12. GRANTs + RLS policies for all of the above, including the Superadmin administrative policies.
+13. Seed reference data.
 
 Each step is a separate migration presented for approval.
 
@@ -98,7 +118,14 @@ Each step is a separate migration presented for approval.
 
 Seed only: the DFN Desarrollo e Infraestructura organization, the two business units, the 11 roles with default financial levels, the full permission catalog, and role→permission mappings. No fake projects or financials. The org UUID is never hard-coded in the frontend; the client resolves it from the user's `organization_members` row.
 
-Initial users: created manually in the Supabase dashboard (Director, Residente, Maestro, Contabilidad test accounts) — no privileged admin-user code in this phase. Their memberships are attached by a small, reviewed SQL statement referencing emails, not by the app.
+Initial users: created manually in the Supabase dashboard — no privileged admin-user code in this phase. Memberships and the first `platform_admins` row are attached by a small, reviewed SQL statement referencing emails, not by the app.
+
+Two real owner accounts (mandatory for Phase 2 testing, never simulated with DemoRoleSwitcher once real auth is on):
+- **Account A — Superadmin**: active row in `private.platform_admins` (`superadmin`), plus an explicitly assigned Director General organization membership at F4 for business testing.
+- **Account B — Residente**: no platform-admin row, membership only in the selected test project with the Residente de Obra role and an explicitly configured financial level (F2 or F3), no access to administration or unrelated projects.
+
+Optional additional test identities: Maestro and Contabilidad, configured the same way.
+
 
 ## 9. Auth flow and mock-to-real migration
 
@@ -114,7 +141,14 @@ Staged migration, demo system stays until each stage is green:
 
 ## 10. Security test matrix
 
-Director: reads all org projects; reads financials. Residente: reads assigned project, 0 rows for unrelated project. Maestro: assigned project only; `project_financials` returns 0 rows. Contabilidad: cross-project financial reads allowed at its level. Anonymous: 0 rows on every table. Plus: expired membership (ends_at past) → no access; inactive membership → no access; override deny removes a role-granted permission; override allow grants one; direct unauthorized project URL renders the unavailable state; direct PostgREST query with a known UUID returns empty.
+Business access: Director reads all org projects and financials; Residente reads assigned project, 0 rows for unrelated project; Maestro assigned project only and `project_financials` returns 0 rows; Contabilidad cross-project financial reads at its level; Anonymous 0 rows everywhere. Plus expired membership → no access; inactive membership → no access; override deny removes a role-granted permission; override allow grants one; unauthorized project URL renders the unavailable state; direct PostgREST query with a known UUID returns empty.
+
+Platform administration (run with the two real accounts):
+- Account A (Superadmin): can perform permitted administrative writes through the approved protected paths; sees the administration navigation; reads business/financial data only through its separately assigned Director General + F4 membership, except the documented audit-read policy.
+- Director non-Superadmin: F4 grants no administration; cannot change roles, permissions, memberships or financial levels.
+- Account B (Residente): `private.platform_admins` is unreadable (function/table not in the API); admin navigation hidden and admin URLs render unauthorized; cannot assign roles, modify memberships, change financial levels or view unrelated projects; direct Supabase API attempts blocked by grants/RLS.
+- Privilege escalation (all must fail): insert self into platform_admins; modify own organization_members row; change own role_id; raise own financial_level; insert a project_members row for self; insert a permission override for self.
+
 
 ## 11. Risks and edge cases
 
@@ -126,13 +160,18 @@ Supabase Free, current Lovable plan, GitHub Free only. No new paid services and 
 
 ## 13. Acceptance checklist
 
-- All 13 tables exist with PKs, FKs, uniques, checks, indexes and restrictive deletes.
-- RLS enabled and explicit GRANTs on every table; `anon` cannot read any business data.
+- All 13 public tables plus `private.platform_admins` exist with PKs, FKs, uniques, checks, indexes and restrictive deletes.
+- RLS enabled and explicit GRANTs on every public table; `anon` cannot read any business data; `private.platform_admins` is not reachable from the Data API.
 - Helper functions live in `private`, are SECURITY DEFINER with empty search_path, and are not exposed via the Data API.
+- Superadmin is modeled independently of business role and financial level; F4 and Director General grant no administration.
+- No BYPASSRLS database role is used from the browser; no service-role credential appears in frontend code.
 - Profile auto-created for dashboard-created auth users.
 - Real login, logout and password reset work; no sign-up UI exists.
 - Role/permission/financial-level resolution comes from the database, not from role-name checks in the client.
+- Two distinct real Supabase accounts (Superadmin and Residente) exist and pass their matrix rows; all privilege-escalation attempts fail.
 - Every item of the security test matrix passes.
+- Navigation config can expose an admin group to Superadmins, but no administration module is built.
 - Phase 1 shell, routes and components still render for all four roles with real data.
 - Demo session/role switcher removed only after real auth is confirmed.
 - No operational module tables created; typecheck and build clean.
+
