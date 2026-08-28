@@ -10,6 +10,21 @@ Core backend + real authorization. Replaces the mocked identity/project foundati
 - Permissions are a catalog + role mappings + per-project-member overrides. No role-name string checks in code; the client uses permission codes only for UI visibility.
 - All privileged helper logic lives in a non-exposed `private` schema, `SECURITY DEFINER`, `set search_path = ''`, fully qualified names, `REVOKE EXECUTE FROM anon, authenticated` where possible (policies run as definer-owner and can still call them).
 - Sensitive money lives only in `project_financials`, gated separately from `projects`.
+- **Platform administration is a third, independent plane** (`private.platform_admins`), unrelated to business role and financial level. See section 2b.
+
+### 2b. Platform Superadmin layer
+
+`private.platform_admins` (not in `public`, not exposed through the Data API, no grants to `anon`/`authenticated`): id, user_id FK → auth.users (ON DELETE CASCADE), admin_level (CHECK in ('superadmin') for now, extensible), is_active, created_at, created_by. Partial unique on (user_id) WHERE is_active.
+
+Separation rules:
+- Superadmin ≠ Director General, ≠ F4, ≠ any org or project role. F4 never implies administration; administration never implies financial visibility.
+- A Superadmin who must also see business data receives an explicit organization membership (e.g. Director General + F4). Business reads stay governed by the normal membership/financial policies.
+- Helper: `private.is_superadmin(_user_id uuid default auth.uid())` — STABLE, SECURITY DEFINER, `search_path = ''`, fully qualified `private.platform_admins`, returns true only for an active row. `REVOKE EXECUTE ON FUNCTION private.is_superadmin FROM public, anon, authenticated;` policies call it as the definer owner. It returns a boolean only — it can never be used to read or mutate data by itself.
+- RLS behavior: no BYPASSRLS role is ever used from the browser. Administration is expressed as additional explicit policies on the administrative tables (organizations, business_units, profiles activation, organization_members, project_members, overrides, roles, role_permissions, projects, project_financials write, audit read) with `USING (private.is_superadmin())`. Superadmin does **not** get a blanket read of every business table unless a policy documents it (audit read is the documented exception).
+- Auth user management (future, not built in Phase 2): Superadmin browser → authenticated TanStack server function → verify `private.is_superadmin()` server-side → call the Supabase Auth admin API with the service-role key held only in the server runtime → create/invite/deactivate. The secret never reaches frontend code, and the client never calls the admin API directly. For Phase 2, test users are created manually in the Supabase dashboard.
+- Navigation readiness only: `src/config/navigation.ts` gains an `admin` group (`/administracion`, `/usuarios`, `/roles`, `/proyectos`, `/permisos`) rendered solely when the access context reports `isSuperadmin`. The routes and module screens are not built in Phase 2.
+
+
 
 ## 2. Tables and fields
 
