@@ -169,9 +169,15 @@ Warehouse users must never automatically see contract value, unit prices sold to
 
 Seed only: the DFN Desarrollo e Infraestructura organization, the two business units, the approved roles (including Superintendente de Obra and Almacén as confirmed real roles) with default financial levels, the full permission catalog above, and role→permission mappings. No fake projects or financials. The org UUID is never hard-coded in the frontend; the client resolves it from the user's `organization_members` row.
 
-Initial users: created manually in the Supabase dashboard — no privileged admin-user code in this phase. Memberships and the first `platform_admins` row are attached by a small, reviewed SQL statement referencing emails, not by the app. No personal emails or passwords are stored in the plan or in seed SQL.
+Seed files contain **no personal emails, names, passwords or other personal identifiers**. Identity bootstrap is a separate, reviewed, one-time script — never a reusable migration:
 
-Real test identity matrix (all non-Superadmin unless stated):
+1. Create the Auth users manually in the Supabase dashboard.
+2. Read each `auth.users` UUID from the dashboard.
+3. Run the one-time bootstrap script that inserts memberships, financial levels and the first `private.platform_admins` row **by explicit UUID**, not by email matching.
+4. The script is not committed as a schema migration and is not re-runnable as part of the reference seed.
+
+Real test identity matrix (all non-Superadmin unless stated); identities are named here for planning only and are attached in the database by UUID:
+
 
 | Identity | Role | Financial level | Platform Superadmin |
 |---|---|---|---|
