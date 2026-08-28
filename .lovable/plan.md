@@ -219,15 +219,16 @@ Seed files contain **no personal emails, names, passwords or other personal iden
 Real test identity matrix (all non-Superadmin unless stated); identities are named here for planning only and are attached in the database by UUID:
 
 
-| Identity | Role | Financial level | Platform Superadmin |
+| Identity | Organization membership (role / level) | Project membership (role / level) | Platform Superadmin |
 |---|---|---|---|
-| Diego (admin account) | platform administration only | none by itself; Director General + F4 may be assigned explicitly for business testing | Yes |
-| Pablo Avilés | Director General | F4 | No |
-| Miguel Ángel Tobón | Superintendente de Obra | F3 | No |
-| Diego (second account) | Residente de Obra | F2 | No |
-| Ricardo | Maestro de Obra | F1 | No |
-| Cecy | Contabilidad | F2 | No |
-| Warehouse test user | Almacén | F0/F1 | No |
+| Diego (admin account) | NULL role / F0 (Director General + F4 may be added explicitly for business testing) | none by default | Yes |
+| Pablo Avilés | Director General / F4 (+ `portfolio.view`) | none required | No |
+| Miguel Ángel Tobón | NULL role / F0 | Superintendente de Obra / F3 on assigned projects | No |
+| Diego (second account) | NULL role / F0 | Residente de Obra / F2 on Maraluna only | No |
+| Ricardo | NULL role / F0 | Maestro de Obra / F1 on assigned project | No |
+| Cecy | Contabilidad / F2 (organization-scoped accounting codes) | none required | No |
+| Warehouse test user | Almacén / F0–F1 (organization-scoped warehouse codes) | none required | No |
+
 
 The two mandatory owner accounts remain distinct real Supabase Auth users and are never simulated with DemoRoleSwitcher once real auth is on: Account A = Diego Superadmin; Account B = Diego Residente scoped to the selected test project only.
 
