@@ -3,9 +3,10 @@ import { AppLink } from "@/components/common/AppLink";
 import { Brand } from "@/components/common/Brand";
 import { ProjectSwitcher } from "@/components/layout/ProjectSwitcher";
 import { getNavItems, type NavItem } from "@/config/navigation";
-import { ROLE_LABELS } from "@/config/roles";
+import { useAuth } from "@/contexts/auth-context";
 import { useProjectContext } from "@/contexts/project-context";
 import { useSession } from "@/contexts/session-context";
+import { profileDisplayName, roleDisplayLabel } from "@/types/authorization";
 
 const GROUP_LABELS: Record<NavItem["group"], string> = {
   principal: "Principal",
@@ -18,11 +19,12 @@ const GROUP_ORDER: NavItem["group"][] = ["principal", "operacion", "control", "c
 
 /** Sidebar de escritorio. UI visibility only — NOT authorization. */
 export function SidebarNav() {
-  const { user, role } = useSession();
+  const { user, demoRole } = useSession();
   const { activeProject } = useProjectContext();
+  const { authorizationContext } = useAuth();
 
   const items = getNavItems({
-    role,
+    role: demoRole,
     financialLevel: user.financialLevel,
     hasProject: Boolean(activeProject),
     surface: "desktop",
@@ -75,8 +77,14 @@ export function SidebarNav() {
       </div>
 
       <div className="border-t border-sidebar-border px-4 py-3">
-        <p className="truncate text-sm font-medium">{user.name}</p>
-        <p className="truncate text-xs text-sidebar-foreground/60">{ROLE_LABELS[role]}</p>
+        <p className="truncate text-sm font-medium">
+          {profileDisplayName(authorizationContext?.profile)}
+        </p>
+        {roleDisplayLabel(authorizationContext, activeProject?.id) ? (
+          <p className="truncate text-xs text-sidebar-foreground/60">
+            {roleDisplayLabel(authorizationContext, activeProject?.id)}
+          </p>
+        ) : null}
       </div>
     </nav>
   );

@@ -35,6 +35,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loadingContext, setLoadingContext] = useState(false);
   const [contextError, setContextError] = useState<string | null>(null);
   const mounted = useRef(true);
+  /**
+   * Mientras login() está en curso, el evento SIGNED_IN de onAuthStateChange NO
+   * debe disparar fetchContext: login() mismo carga el contexto de forma
+   * autoritativa. Esto evita dos llamadas RPC concurrentes tras el inicio de sesión.
+   */
+  const loginInFlight = useRef(false);
 
   const fetchContext = useCallback(async (): Promise<AuthorizationContext | null> => {
     setLoadingContext(true);
@@ -68,6 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (event === "SIGNED_IN" || event === "USER_UPDATED") {
+        if (event === "SIGNED_IN" && loginInFlight.current) return;
         void fetchContext();
       }
     });
@@ -88,15 +95,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback<AuthContextValue["login"]>(
     async (email, password) => {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error || !data.session) {
-        if (error) console.error("[auth] signInWithPassword", error.message);
-        return { ok: false, message: GENERIC_LOGIN_ERROR };
+      loginInFlight.current = true;
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error || !data.session) {
+          if (error) console.error("[auth] signInWithPassword", error.message);
+          return { ok: false, message: GENERIC_LOGIN_ERROR };
+        }
+        setSession(data.session);
+        const context = await fetchContext();
+        if (!context) return { ok: false, message: CONTEXT_ERROR };
+        return { ok: true };
+      } finally {
+        loginInFlight.current = false;
       }
-      setSession(data.session);
-      const context = await fetchContext();
-      if (!context) return { ok: false, message: CONTEXT_ERROR };
-      return { ok: true };
     },
     [fetchContext],
   );

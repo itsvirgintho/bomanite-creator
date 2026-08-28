@@ -5,11 +5,11 @@ import { useSession } from "@/contexts/session-context";
 
 /** Navegación inferior móvil: máximo 5 destinos, objetivos táctiles amplios. */
 export function MobileBottomNav() {
-  const { user, role } = useSession();
+  const { user, demoRole } = useSession();
   const { activeProject } = useProjectContext();
 
   const items = getNavItems({
-    role,
+    role: demoRole,
     financialLevel: user.financialLevel,
     hasProject: Boolean(activeProject),
     surface: "mobile",

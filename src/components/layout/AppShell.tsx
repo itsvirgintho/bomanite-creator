@@ -3,15 +3,13 @@ import { UserRound } from "lucide-react";
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { Brand } from "@/components/common/Brand";
-import { RoleBadge } from "@/components/common/RoleBadge";
 import { LoadingState } from "@/components/common/States";
 import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import { ProjectSwitcher } from "@/components/layout/ProjectSwitcher";
 import { SidebarNav } from "@/components/layout/SidebarNav";
 import { useAuth } from "@/contexts/auth-context";
 import { useProjectContext } from "@/contexts/project-context";
-import { useSession } from "@/contexts/session-context";
-import { profileDisplayName } from "@/types/authorization";
+import { profileDisplayName, roleDisplayLabel } from "@/types/authorization";
 
 interface AppShellProps {
   children: ReactNode;
@@ -20,7 +18,6 @@ interface AppShellProps {
 }
 
 export function AppShell({ children, contextLabel }: AppShellProps) {
-  const { role } = useSession();
   const {
     session,
     initializing,
@@ -65,6 +62,8 @@ export function AppShell({ children, contextLabel }: AppShellProps) {
   }
 
   const displayName = profileDisplayName(authorizationContext.profile);
+  // Rol real (solo visualización; no implica permisos). null = sin insignia.
+  const roleLabel = roleDisplayLabel(authorizationContext, activeProject?.id);
 
   const label = contextLabel ?? activeProject?.name ?? "Vista global";
 
@@ -102,7 +101,11 @@ export function AppShell({ children, contextLabel }: AppShellProps) {
               <p className="truncate text-sm font-medium">{label}</p>
             </div>
             <div className="flex items-center gap-3">
-              <RoleBadge role={role} />
+              {roleLabel ? (
+                <span className="inline-flex items-center rounded-sm border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  {roleLabel}
+                </span>
+              ) : null}
               <Link
                 to="/perfil"
                 className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:border-border-strong"
