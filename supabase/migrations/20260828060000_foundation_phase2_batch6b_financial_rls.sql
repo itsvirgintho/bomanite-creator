@@ -1,4 +1,3 @@
-cat > supabase/migrations/20260828060000_foundation_phase2_batch6b_financial_rls.sql <<'SQL'
 -- ============================================================
 -- DFN Control — Foundation Phase 2 — Migration Batch 6B
 -- Financial visibility RLS
@@ -16,8 +15,6 @@ cat > supabase/migrations/20260828060000_foundation_phase2_batch6b_financial_rls
 
 -- ============================================================
 -- 1. Explicit browser grants
---
--- Start from zero authenticated privileges and grant SELECT only.
 -- ============================================================
 
 REVOKE ALL
@@ -46,7 +43,7 @@ GRANT SELECT
   TO authenticated;
 
 
--- anon remains completely blocked.
+-- anon remains completely blocked
 
 REVOKE ALL
   ON TABLE public.project_cost_financials
@@ -138,7 +135,7 @@ DO $$
 BEGIN
 
   -- ----------------------------------------------------------
-  -- RLS must remain enabled on all three financial tables.
+  -- RLS must remain enabled on all three financial tables
   -- ----------------------------------------------------------
 
   IF NOT (
@@ -184,7 +181,7 @@ BEGIN
 
 
   -- ----------------------------------------------------------
-  -- Exactly three intended SELECT policies must exist.
+  -- Exactly three intended SELECT policies must exist
   -- ----------------------------------------------------------
 
   IF (
@@ -204,8 +201,7 @@ BEGIN
 
 
   -- ----------------------------------------------------------
-  -- Each table must have exactly one policy total.
-  -- This prevents accidental additional permissive paths.
+  -- Each financial table must have exactly one policy total
   -- ----------------------------------------------------------
 
   IF (
@@ -242,7 +238,7 @@ BEGIN
 
 
   -- ----------------------------------------------------------
-  -- There must be ZERO financial mutation policies.
+  -- ZERO financial mutation policies
   -- ----------------------------------------------------------
 
   IF EXISTS (
@@ -262,7 +258,7 @@ BEGIN
 
 
   -- ----------------------------------------------------------
-  -- authenticated must have SELECT on all 3 tables.
+  -- authenticated must have SELECT on all three tables
   -- ----------------------------------------------------------
 
   IF NOT has_table_privilege(
@@ -296,7 +292,7 @@ BEGIN
 
 
   -- ----------------------------------------------------------
-  -- authenticated must have ZERO INSERT / UPDATE / DELETE.
+  -- authenticated must have ZERO INSERT / UPDATE / DELETE
   -- ----------------------------------------------------------
 
   IF
@@ -354,7 +350,7 @@ BEGIN
 
 
   -- ----------------------------------------------------------
-  -- anon must remain completely blocked.
+  -- anon must remain blocked
   -- ----------------------------------------------------------
 
   IF
@@ -380,7 +376,7 @@ BEGIN
 
 
   -- ----------------------------------------------------------
-  -- Authoritative financial helper must still exist.
+  -- Authoritative financial helper must exist
   -- ----------------------------------------------------------
 
   IF NOT EXISTS (
@@ -399,7 +395,7 @@ BEGIN
 
 
   -- ----------------------------------------------------------
-  -- Financial helper must remain SECURITY DEFINER.
+  -- Financial helper must remain SECURITY DEFINER
   -- ----------------------------------------------------------
 
   IF NOT EXISTS (
@@ -419,7 +415,7 @@ BEGIN
 
 
   -- ----------------------------------------------------------
-  -- Financial helper search_path must remain locked.
+  -- Financial helper search_path must remain locked
   -- ----------------------------------------------------------
 
   IF NOT EXISTS (
@@ -440,8 +436,7 @@ BEGIN
 
 
   -- ----------------------------------------------------------
-  -- authenticated must still be able to execute the helper
-  -- for RLS evaluation.
+  -- authenticated can execute helper for RLS evaluation
   -- ----------------------------------------------------------
 
   IF NOT has_function_privilege(
@@ -455,7 +450,7 @@ BEGIN
 
 
   -- ----------------------------------------------------------
-  -- anon must NOT execute the financial helper.
+  -- anon must NOT execute helper
   -- ----------------------------------------------------------
 
   IF has_function_privilege(
@@ -469,7 +464,7 @@ BEGIN
 
 
   -- ----------------------------------------------------------
-  -- PUBLIC must NOT execute the financial helper.
+  -- PUBLIC must NOT execute helper
   -- ----------------------------------------------------------
 
   IF has_function_privilege(
@@ -483,8 +478,3 @@ BEGIN
 
 END;
 $$;
-SQL
-
-git diff --check
-
-git status --short
