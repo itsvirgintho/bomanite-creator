@@ -141,7 +141,14 @@ Staged migration, demo system stays until each stage is green:
 
 ## 10. Security test matrix
 
-Director: reads all org projects; reads financials. Residente: reads assigned project, 0 rows for unrelated project. Maestro: assigned project only; `project_financials` returns 0 rows. Contabilidad: cross-project financial reads allowed at its level. Anonymous: 0 rows on every table. Plus: expired membership (ends_at past) → no access; inactive membership → no access; override deny removes a role-granted permission; override allow grants one; direct unauthorized project URL renders the unavailable state; direct PostgREST query with a known UUID returns empty.
+Business access: Director reads all org projects and financials; Residente reads assigned project, 0 rows for unrelated project; Maestro assigned project only and `project_financials` returns 0 rows; Contabilidad cross-project financial reads at its level; Anonymous 0 rows everywhere. Plus expired membership → no access; inactive membership → no access; override deny removes a role-granted permission; override allow grants one; unauthorized project URL renders the unavailable state; direct PostgREST query with a known UUID returns empty.
+
+Platform administration (run with the two real accounts):
+- Account A (Superadmin): can perform permitted administrative writes through the approved protected paths; sees the administration navigation; reads business/financial data only through its separately assigned Director General + F4 membership, except the documented audit-read policy.
+- Director non-Superadmin: F4 grants no administration; cannot change roles, permissions, memberships or financial levels.
+- Account B (Residente): `private.platform_admins` is unreadable (function/table not in the API); admin navigation hidden and admin URLs render unauthorized; cannot assign roles, modify memberships, change financial levels or view unrelated projects; direct Supabase API attempts blocked by grants/RLS.
+- Privilege escalation (all must fail): insert self into platform_admins; modify own organization_members row; change own role_id; raise own financial_level; insert a project_members row for self; insert a permission override for self.
+
 
 ## 11. Risks and edge cases
 
