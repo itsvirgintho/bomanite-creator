@@ -465,12 +465,34 @@ BEGIN
 
   -- ----------------------------------------------------------
   -- PUBLIC must NOT execute helper
+  --
+  -- PUBLIC is a PostgreSQL pseudo-role, represented as
+  -- grantee OID 0 in ACLs. It cannot be passed as a normal
+  -- role name to has_function_privilege().
   -- ----------------------------------------------------------
 
-  IF has_function_privilege(
-    'PUBLIC',
-    'private.can_read_financial_class(uuid,smallint,text)',
-    'EXECUTE'
+  IF EXISTS (
+    SELECT 1
+    FROM pg_proc p
+
+    JOIN pg_namespace n
+      ON n.oid = p.pronamespace
+
+    CROSS JOIN LATERAL aclexplode(
+      COALESCE(
+        p.proacl,
+        acldefault('f', p.proowner)
+      )
+    ) AS acl
+
+    WHERE n.nspname = 'private'
+      AND p.proname = 'can_read_financial_class'
+
+      AND pg_get_function_identity_arguments(p.oid)
+        = 'p_project_id uuid, p_required_level smallint, p_permission_code text'
+
+      AND acl.grantee = 0
+      AND acl.privilege_type = 'EXECUTE'
   ) THEN
     RAISE EXCEPTION
       'Batch 6B validation failed: PUBLIC can execute financial helper.';
