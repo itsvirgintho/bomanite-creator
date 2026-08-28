@@ -101,25 +101,27 @@ Scope lives on `role_permissions`, not on `permissions`. A mapping is only honor
 
 GRANT decides whether a role may attempt an operation; RLS decides which rows. Both are specified explicitly; Supabase default privileges are not relied upon. Every table starts with `REVOKE ALL ... FROM PUBLIC, anon;` — `anon` receives no privilege on any DFN business table. `service_role` receives `ALL` on public tables for server-side maintenance. RLS is enabled on every public table.
 
-| Table | GRANT to `authenticated` | SELECT policy | Write policy |
-|---|---|---|---|
-| organizations | SELECT | active org member | Superadmin only |
-| business_units | SELECT | active org member | Superadmin only |
-| profiles | SELECT | self, or same-org member | none — self edits via `public.update_own_profile`; activation/admin fields Superadmin only |
-| organization_members | SELECT | own rows, or Superadmin | Superadmin only (no INSERT/UPDATE/DELETE grant to `authenticated`) |
-| roles | SELECT | authenticated org member (read-only catalog) | Superadmin only (no write grant) |
-| permissions | SELECT | authenticated org member | Superadmin only (no write grant) |
-| role_permissions | SELECT | authenticated org member | Superadmin only (no write grant) |
-| projects | SELECT, UPDATE | `private.can_access_project(id)` | UPDATE requires `project.edit` in that project; INSERT/DELETE Superadmin only |
-| project_cost_financials | SELECT | project visibility + level >= 2 + `financial.cost_view` | Superadmin only in Phase 2 |
-| project_contract_financials | SELECT | project visibility + level >= 3 + `financial.contract_view` | Superadmin only in Phase 2 |
-| project_executive_financials | SELECT | project visibility + level >= 4 + `financial.margin_view` | Superadmin only in Phase 2 |
+**Phase 2 rule: `authenticated` receives SELECT only, on every table.** No generic client INSERT/UPDATE/DELETE exists anywhere in this phase, including `projects` and `project_locations` — no project-administration or location-editor UI is being built. Initial configuration is done with reviewed bootstrap/admin SQL. Being Superadmin does **not** give the browser unrestricted write grants; later administration will run through narrowly scoped trusted server functions that verify Superadmin server-side.
 
-| project_members | SELECT | own rows, or project members visible to the caller | Superadmin only (no write grant) |
-| project_member_permission_overrides | SELECT | via parent member visibility | Superadmin only (no write grant) |
-| project_locations | SELECT, INSERT, UPDATE | `private.can_access_project(project_id)` | requires `project.edit`; DELETE not granted (archive instead) |
-| audit_logs | SELECT | `audit.view` scoped to org/project, or Superadmin | no INSERT/UPDATE/DELETE grant; written only by definer triggers/functions |
-| private.platform_admins | none | none from the client (schema not exposed) | none from the client; managed by the one-time bootstrap script or a verified server function |
+| Table | GRANT to `authenticated` | SELECT policy | Client writes in Phase 2 |
+|---|---|---|---|
+| organizations | SELECT | active org member | none |
+| business_units | SELECT | active org member | none |
+| profiles | SELECT | self, or same-org member | none — self edits only via `public.update_own_profile` |
+| organization_members | SELECT | own rows only (where permitted) | none |
+| roles | SELECT | active org member (read-only catalog) | none |
+| permissions | SELECT | active org member | none |
+| role_permissions | SELECT | active org member | none |
+| projects | SELECT | `private.can_access_project(id)` | none (`project.edit` is seeded for future protected APIs, not a row UPDATE grant) |
+| project_cost_financials | SELECT | visibility + level >= 2 + `financial.cost_view` on the matching path | none |
+| project_contract_financials | SELECT | visibility + level >= 3 + `financial.contract_view` on the matching path | none |
+| project_executive_financials | SELECT | visibility + level >= 4 + `financial.margin_view` on the matching path | none |
+| project_members | SELECT | own rows, or members of projects the caller can access | none |
+| project_member_permission_overrides | SELECT | via parent member visibility | none |
+| project_locations | SELECT | `private.can_access_project(project_id)` | none (future protected mutation path) |
+| audit_logs | SELECT | `audit.view` scoped to org/project, or Superadmin | none; written only by definer triggers/functions |
+| private.platform_admins | none | none from the client (schema not exposed) | none from the client; set by the one-time bootstrap script |
+
 
 Security-bearing rows (`organization_members`, `project_members`, overrides, `roles`, `role_permissions`, and the three financial tables) therefore have **no client mutation grant at all** in Phase 2 — a normal user cannot even attempt the write, so correctness does not depend on subtle RLS expressions. Each financial table gets its own single-class SELECT policy; no policy covers more than one sensitivity class.
 
