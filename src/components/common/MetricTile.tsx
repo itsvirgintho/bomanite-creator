@@ -12,7 +12,7 @@ const EMPHASIS: Record<NonNullable<MetricValue["emphasis"]>, string> = {
 
 interface MetricTileProps {
   metric: MetricValue;
-  params?: Record<string, string>;
+  params?: Record<string, string> | undefined;
 }
 
 /**
@@ -57,8 +57,8 @@ export function MetricGrid({
   className,
 }: {
   metrics: MetricValue[];
-  params?: Record<string, string>;
-  className?: string;
+  params?: Record<string, string> | undefined;
+  className?: string | undefined;
 }) {
   return (
     <div className={cn("grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6", className)}>

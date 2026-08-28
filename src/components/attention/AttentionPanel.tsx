@@ -15,7 +15,7 @@ export function AttentionItem({
   params,
 }: {
   item: AttentionItemType;
-  params?: Record<string, string>;
+  params?: Record<string, string> | undefined;
 }) {
   const severity = SEVERITY[item.severity];
 
@@ -61,9 +61,9 @@ export function AttentionItem({
 
 interface AttentionPanelProps {
   items: AttentionItemType[];
-  title?: string;
-  params?: Record<string, string>;
-  emptyTitle?: string;
+  title?: string | undefined;
+  params?: Record<string, string> | undefined;
+  emptyTitle?: string | undefined;
 }
 
 /** "Requiere tu atención": bloque operativo principal para Director, Residente y Contabilidad. */

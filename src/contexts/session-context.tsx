@@ -86,7 +86,7 @@ export function getHomeRoute(user: DemoUser): { to: string; params?: { projectId
     case "contabilidad":
       return { to: "/contabilidad" };
     default: {
-      const projectId = user.assignedProjectIds[0] ?? DEMO_PROJECTS[0].id;
+      const projectId = user.assignedProjectIds[0] ?? DEMO_PROJECTS[0]?.id ?? "maraluna";
       return { to: "/proyecto/$projectId", params: { projectId } };
     }
   }

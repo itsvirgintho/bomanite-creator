@@ -4,9 +4,9 @@ import { AppLink } from "@/components/common/AppLink";
 export interface QuickAction {
   id: string;
   label: string;
-  icon: ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }> | undefined;
   to: string;
-  params?: Record<string, string>;
+  params?: Record<string, string> | undefined;
 }
 
 /** Acciones rápidas de campo: objetivos táctiles grandes, una acción por tarjeta. */

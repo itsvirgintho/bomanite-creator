@@ -14,7 +14,7 @@ import { useSession } from "@/contexts/session-context";
 interface AppShellProps {
   children: ReactNode;
   /** Contexto mostrado en la barra superior (nombre del proyecto o ámbito). */
-  contextLabel?: string;
+  contextLabel?: string | undefined;
 }
 
 export function AppShell({ children, contextLabel }: AppShellProps) {

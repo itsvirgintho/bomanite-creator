@@ -10,7 +10,7 @@ interface AppLinkProps {
   children: ReactNode;
   activeOptions?: LinkProps["activeOptions"] | undefined;
   "aria-label"?: string | undefined;
-  "aria-current"?: ComponentProps<"a">["aria-current"];
+  "aria-current"?: ComponentProps<"a">["aria-current"] | undefined;
 }
 
 /**
