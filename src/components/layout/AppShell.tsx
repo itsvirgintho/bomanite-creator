@@ -8,8 +8,10 @@ import { LoadingState } from "@/components/common/States";
 import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import { ProjectSwitcher } from "@/components/layout/ProjectSwitcher";
 import { SidebarNav } from "@/components/layout/SidebarNav";
+import { useAuth } from "@/contexts/auth-context";
 import { useProjectContext } from "@/contexts/project-context";
 import { useSession } from "@/contexts/session-context";
+import { profileDisplayName } from "@/types/authorization";
 
 interface AppShellProps {
   children: ReactNode;
