@@ -143,7 +143,7 @@ No views are created in Phase 2. Any future view exposed to `authenticated` must
 3. profiles + auth.users trigger.
 4. roles, permissions, role_permissions.
 5. organization_members.
-6. projects, project_financials.
+6. projects, then `project_cost_financials`, `project_contract_financials`, `project_executive_financials` (each its own small migration so policies stay reviewable per sensitivity class).
 7. project_members, overrides.
 8. project_locations (+ cycle trigger).
 9. audit_logs + audit write function/triggers.
