@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { LoadingState } from "@/components/common/States";
-import { getHomeRoute, useSession } from "@/contexts/session-context";
+import { useAuth } from "@/contexts/auth-context";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -13,20 +13,15 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-/** Redirección según el rol demo activo (se resuelve en cliente tras hidratar). */
+/** Redirección según la sesión real de Supabase (se resuelve en cliente). */
 function Index() {
-  const { user, isSignedIn, hydrated } = useSession();
+  const { session, initializing } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!hydrated) return;
-    if (!isSignedIn) {
-      void navigate({ to: "/auth", replace: true });
-      return;
-    }
-    const home = getHomeRoute(user);
-    void navigate({ to: home.to, params: home.params, replace: true } as never);
-  }, [hydrated, isSignedIn, user, navigate]);
+    if (initializing) return;
+    void navigate({ to: session ? "/portafolio" : "/auth", replace: true });
+  }, [initializing, session, navigate]);
 
   return (
     <div className="mx-auto max-w-3xl p-6">
