@@ -61,7 +61,7 @@ projects 1─0..1 project_cost_financials        (F2 + financial.cost_view)
 projects 1─0..1 project_contract_financials    (F3 + financial.contract_view)
 projects 1─0..1 project_executive_financials   (F4 + financial.margin_view)
 
-projects 1─0..1 project_financials
+
 projects 1─* project_members *─1 roles
 project_members 1─* project_member_permission_overrides *─1 permissions
 projects 1─* project_locations ─* (self, recursive)
