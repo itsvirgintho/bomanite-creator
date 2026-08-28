@@ -14,6 +14,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as ContabilidadRouteImport } from './routes/contabilidad'
 import { Route as PerfilRouteImport } from './routes/perfil'
 import { Route as PortafolioRouteImport } from './routes/portafolio'
+import { Route as AuthResetPasswordRouteImport } from './routes/auth_.reset-password'
 import { Route as ProyectoProjectIdRouteImport } from './routes/proyecto.$projectId'
 import { Route as ProyectoProjectIdIndexRouteImport } from './routes/proyecto.$projectId.index'
 import { Route as ProyectoProjectIdAvanceRouteImport } from './routes/proyecto.$projectId.avance'
@@ -47,6 +48,11 @@ const PerfilRoute = PerfilRouteImport.update({
 const PortafolioRoute = PortafolioRouteImport.update({
   id: '/portafolio',
   path: '/portafolio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthResetPasswordRoute = AuthResetPasswordRouteImport.update({
+  id: '/auth_/reset-password',
+  path: '/auth/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProyectoProjectIdRoute = ProyectoProjectIdRouteImport.update({
@@ -105,6 +111,7 @@ export interface FileRoutesByFullPath {
   '/contabilidad': typeof ContabilidadRoute
   '/perfil': typeof PerfilRoute
   '/portafolio': typeof PortafolioRoute
+  '/auth/reset-password': typeof AuthResetPasswordRoute
   '/proyecto/$projectId': typeof ProyectoProjectIdRouteWithChildren
   '/proyecto/$projectId/avance': typeof ProyectoProjectIdAvanceRoute
   '/proyecto/$projectId/estimaciones': typeof ProyectoProjectIdEstimacionesRoute
@@ -121,6 +128,7 @@ export interface FileRoutesByTo {
   '/contabilidad': typeof ContabilidadRoute
   '/perfil': typeof PerfilRoute
   '/portafolio': typeof PortafolioRoute
+  '/auth/reset-password': typeof AuthResetPasswordRoute
   '/proyecto/$projectId/avance': typeof ProyectoProjectIdAvanceRoute
   '/proyecto/$projectId/estimaciones': typeof ProyectoProjectIdEstimacionesRoute
   '/proyecto/$projectId/gastos': typeof ProyectoProjectIdGastosRoute
@@ -137,6 +145,7 @@ export interface FileRoutesById {
   '/contabilidad': typeof ContabilidadRoute
   '/perfil': typeof PerfilRoute
   '/portafolio': typeof PortafolioRoute
+  '/auth_/reset-password': typeof AuthResetPasswordRoute
   '/proyecto/$projectId': typeof ProyectoProjectIdRouteWithChildren
   '/proyecto/$projectId/avance': typeof ProyectoProjectIdAvanceRoute
   '/proyecto/$projectId/estimaciones': typeof ProyectoProjectIdEstimacionesRoute
@@ -155,6 +164,7 @@ export interface FileRouteTypes {
     | '/contabilidad'
     | '/perfil'
     | '/portafolio'
+    | '/auth/reset-password'
     | '/proyecto/$projectId'
     | '/proyecto/$projectId/avance'
     | '/proyecto/$projectId/estimaciones'
@@ -171,6 +181,7 @@ export interface FileRouteTypes {
     | '/contabilidad'
     | '/perfil'
     | '/portafolio'
+    | '/auth/reset-password'
     | '/proyecto/$projectId/avance'
     | '/proyecto/$projectId/estimaciones'
     | '/proyecto/$projectId/gastos'
@@ -186,6 +197,7 @@ export interface FileRouteTypes {
     | '/contabilidad'
     | '/perfil'
     | '/portafolio'
+    | '/auth_/reset-password'
     | '/proyecto/$projectId'
     | '/proyecto/$projectId/avance'
     | '/proyecto/$projectId/estimaciones'
@@ -203,6 +215,7 @@ export interface RootRouteChildren {
   ContabilidadRoute: typeof ContabilidadRoute
   PerfilRoute: typeof PerfilRoute
   PortafolioRoute: typeof PortafolioRoute
+  AuthResetPasswordRoute: typeof AuthResetPasswordRoute
   ProyectoProjectIdRoute: typeof ProyectoProjectIdRouteWithChildren
 }
 
@@ -241,6 +254,13 @@ declare module '@tanstack/react-router' {
       path: '/portafolio'
       fullPath: '/portafolio'
       preLoaderRoute: typeof PortafolioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth_/reset-password': {
+      id: '/auth_/reset-password'
+      path: '/auth/reset-password'
+      fullPath: '/auth/reset-password'
+      preLoaderRoute: typeof AuthResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/proyecto/$projectId': {
@@ -340,6 +360,7 @@ const rootRouteChildren: RootRouteChildren = {
   ContabilidadRoute: ContabilidadRoute,
   PerfilRoute: PerfilRoute,
   PortafolioRoute: PortafolioRoute,
+  AuthResetPasswordRoute: AuthResetPasswordRoute,
   ProyectoProjectIdRoute: ProyectoProjectIdRouteWithChildren,
 }
 export const routeTree = rootRouteImport
