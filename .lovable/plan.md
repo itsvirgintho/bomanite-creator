@@ -106,7 +106,10 @@ GRANT decides whether a role may attempt an operation; RLS decides which rows. B
 | permissions | SELECT | authenticated org member | Superadmin only (no write grant) |
 | role_permissions | SELECT | authenticated org member | Superadmin only (no write grant) |
 | projects | SELECT, UPDATE | `private.can_access_project(id)` | UPDATE requires `project.edit` in that project; INSERT/DELETE Superadmin only |
-| project_financials | SELECT | level + explicit financial permission per field group (see §4.6) | Superadmin only in Phase 2 |
+| project_cost_financials | SELECT | project visibility + level >= 2 + `financial.cost_view` | Superadmin only in Phase 2 |
+| project_contract_financials | SELECT | project visibility + level >= 3 + `financial.contract_view` | Superadmin only in Phase 2 |
+| project_executive_financials | SELECT | project visibility + level >= 4 + `financial.margin_view` | Superadmin only in Phase 2 |
+
 | project_members | SELECT | own rows, or project members visible to the caller | Superadmin only (no write grant) |
 | project_member_permission_overrides | SELECT | via parent member visibility | Superadmin only (no write grant) |
 | project_locations | SELECT, INSERT, UPDATE | `private.can_access_project(project_id)` | requires `project.edit`; DELETE not granted (archive instead) |
