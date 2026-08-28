@@ -1,53 +1,41 @@
-# Foundation Phase 2 — Migration Batch 1: Preflight Result and Execution Decision
+# Foundation Phase 2 — Batch 1: Atomicity Verification Report (execution held)
 
-## 1. Preflight (read-only) — PASSED
+Batch 1 was NOT executed. The approved SQL is unchanged. Option A (explicit `BEGIN`/`COMMIT` wrapper) is withdrawn — your objection is correct: PostgreSQL has no nested transactions, and a `COMMIT` inside a runner-owned transaction can close that transaction early and corrupt migration-history bookkeeping.
 
-Queried live database metadata (`pg_namespace`, `pg_class`, `pg_proc`, `pg_trigger`). Result: **zero rows**.
+## Preflight (read-only) — PASSED, unchanged
 
-Confirmed absent (no conflicts with the strict `CREATE` statements):
+Catalog query returned zero rows: no `private` schema, no `public.organizations` / `business_units` / `profiles`, no `private.set_updated_at()` / `private.handle_new_auth_user()`, no `profiles_set_updated_at` / `on_auth_user_created` trigger, and no other user tables or views in `public`. No conflicts with the strict `CREATE` statements.
 
-- Schema `private` — does not exist
-- `public.organizations` — does not exist
-- `public.business_units` — does not exist
-- `public.profiles` — does not exist
-- `private.set_updated_at()` — does not exist
-- `private.handle_new_auth_user()` — does not exist
-- Trigger `profiles_set_updated_at` — does not exist
-- Trigger `on_auth_user_created` on `auth.users` — does not exist
-- No other user tables/views exist in `public` at all
+## Atomicity verification — NOT ESTABLISHED
 
-Nothing must be dropped, replaced or reused. Batch 1 can be created cleanly.
+Neither guarantee A nor guarantee B can be confirmed.
 
-## 2. Atomicity verification — the one open blocker
+What was actually inspected:
 
-Requirement: execute as-is only if the migration mechanism guarantees the whole file runs inside one PostgreSQL transaction.
+- The project repository. It contains only `supabase/config.toml`; there is no `supabase/migrations/` directory, no migration runner code, no CLI wrapper and no npm script that applies migrations. Nothing in the checked-out project defines or executes the migration.
+- The migration tool contract exposed to me. It accepts a SQL string plus a description and returns a single applied/failed result. Its documented contract says nothing about PostgreSQL transaction boundaries, wire protocol, statement splitting, or where migration-history recording happens.
+- Direct database access. The `PG*`-based path is read-only (select/insert), so it cannot be used to observe the runner, and observing the runner's own session behaviour is not possible after the fact.
 
-What is established:
+Answers to your specific questions:
 
-- Migrations are applied through the platform migration tool, which submits the approved SQL as a single versioned migration and reports one success/failure result.
-- What cannot be established from inside this environment, with confidence, is whether that single submission is wrapped by the runner in one explicit `BEGIN/COMMIT`. A multi-statement submission is not automatically transactional, exactly as stated in the approval.
+- **Model A or B in use:** cannot be determined. The runner is a platform-side service; its implementation is not present in this project and is not exposed to me.
+- **Concrete evidence:** none that meets your bar. Everything available is of the "one submission, one result" class, which you have correctly ruled out as insufficient.
+- **Migration-history recording inside the same transaction:** unknown.
+- **Statements split and individually committed:** unknown. I cannot rule it out.
+- **Simple-query vs extended-query protocol:** unknown; not exposed.
 
-Per the approval instructions this is a STOP condition, so Batch 1 was **not** executed in this turn.
+Per your instruction, this is a STOP condition. No execution.
 
-## 3. Resolution options (pick one)
+## Options to resolve (your call)
 
-**Option A — Explicit transaction wrapper (recommended).**
-Submit the approved Batch 1 SQL unchanged, wrapped in a leading `BEGIN;` and a trailing `COMMIT;`. This is migration-framework syntax only and changes no database semantics: every object, constraint, index, grant/revoke and trigger stays byte-identical. It is safe in both cases — if the runner already opens a transaction, the extra `BEGIN` is a no-op warning and the `COMMIT` still commits the full batch; if it does not, the wrapper supplies the required all-or-nothing guarantee. Partial application becomes impossible either way.
+**Option 1 — Platform confirmation.** Obtain the transaction contract for the Lovable/Supabase migration runner from the platform side (docs or support) and record it as a project decision. If it states A or B, Batch 1 executes as-is with no SQL change.
 
-**Option B — Execute as-is.**
-Submit the approved SQL with no wrapper, accepting the residual risk that a failure mid-batch could leave partially created objects. Because the preflight shows a completely empty target, recovery would be a clean manual teardown of whatever was created, but it is still a partial-state risk.
+**Option 2 — Empirical probe migration (state-changing, throwaway).** Apply one disposable probe migration containing two statements where the second is guaranteed to fail, e.g. create a table `public._atomicity_probe` then `SELECT 1/0`. Then read the catalog: if `_atomicity_probe` does not exist, the runner rolled the whole file back and guarantee B holds; if it exists, the runner is non-atomic and the object is dropped in a second cleanup migration. This proves the behaviour empirically without touching Batch 1 SQL, at the cost of two throwaway migrations in history. Requires your explicit approval because it writes to the database.
 
-**Option C — Hold.**
-Do not execute; keep the frozen SQL pending an out-of-band confirmation of runner transaction semantics.
+**Option 3 — Accept non-atomic execution explicitly.** Execute the approved SQL unchanged, accepting that a mid-file failure could leave partial objects. The preflight shows a completely empty target, so recovery is a clean, fully enumerable teardown of exactly the Batch 1 object list. Requires you to accept the partial-state risk in writing.
 
-## 4. What happens on approval
+**Option 4 — Continue holding.** No execution until Option 1 or 2 resolves the question.
 
-1. Create exactly one versioned migration containing only: schema `private`; functions `private.set_updated_at()` and `private.handle_new_auth_user()`; tables `public.organizations`, `public.business_units`, `public.profiles`; triggers `profiles_set_updated_at` and `on_auth_user_created`; the approved constraints, the approved indexes only (`organizations_pkey`, `business_units_pkey`, `business_units_org_code_key`, `profiles_pkey`, partial `profiles_employee_code_key`), and the full security lockdown.
-2. FKs exactly as approved: `business_units.organization_id → organizations.id ON DELETE RESTRICT`; `profiles.id → auth.users.id ON DELETE CASCADE` (retained — this is the approved intentional cascade, not a destructive CASCADE operation).
-3. Post-execution validation against real catalog metadata: object existence; columns/types/defaults/nullability; FK delete rules; exact index list with no extra `organizations_active_idx` or standalone `business_units.organization_id` index; RLS enabled on all three with zero policies; no privileges for `anon`, `authenticated` or `PUBLIC` on the three tables, no `private` schema `USAGE` for `anon`/`authenticated`, no function `EXECUTE` for `PUBLIC`/`anon`/`authenticated`, `service_role` privileges present; zero rows in all three tables.
-4. Confirm no Batch 2 objects, no helpers, no seed data, no Auth users, no frontend/mock-data changes. The only intentional `auth` change is the `on_auth_user_created` trigger.
-5. Then STOP — no test users, no Batch 2.
+## Unchanged scope reminder
 
-## 5. Out of scope for this batch
-
-Roles, permissions, `role_permissions`, memberships, permission overrides, projects, `project_locations`, financial tables, `audit_logs`, `platform_admins`, RLS/access helper functions, navigation, frontend code, seed/business rows, Auth users.
+When execution is authorised, Batch 1 creates only: schema `private`; `private.set_updated_at()` and `private.handle_new_auth_user()`; `public.organizations`, `public.business_units`, `public.profiles`; triggers `profiles_set_updated_at` and `on_auth_user_created`; the approved constraints; only the indexes `organizations_pkey`, `business_units_pkey`, `business_units_org_code_key`, `profiles_pkey`, partial `profiles_employee_code_key`; and the full lockdown (RLS on, zero policies, no `anon`/`authenticated`/`PUBLIC` privileges, no `private` USAGE for `anon`/`authenticated`, no function EXECUTE for `PUBLIC`/`anon`/`authenticated`, `service_role` server-side privileges). The approved `profiles.id → auth.users(id) ON DELETE CASCADE` stays exactly as approved. No seeds, no test users, no Batch 2, no application changes.
