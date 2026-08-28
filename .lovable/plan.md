@@ -309,7 +309,7 @@ Supabase Free, current Lovable plan, GitHub Free only. No new paid services and 
 
 ## 15. Acceptance checklist
 
-- The 13 public core tables plus `private.platform_admins` exist with PKs, FKs, uniques, checks, indexes and restrictive deletes.
+- The 15 public core tables (the three split financial tables replace `project_financials`) plus `private.platform_admins` exist with PKs, FKs, uniques, checks, indexes and restrictive deletes.
 - Every public table has explicit REVOKE/GRANT statements for `anon`, `authenticated` and `service_role`, plus RLS enabled and policies; nothing relies on Supabase default privileges. `anon` holds no privilege on any DFN business table.
 - Security-bearing tables (`organization_members`, `project_members`, overrides, `roles`, `role_permissions`, `project_financials`) have no client mutation grant at all.
 - `private` is not in the Data API exposed schemas; `authenticated` has `USAGE ON SCHEMA private` and per-function `EXECUTE` only on the named policy helpers, and RLS queries actually succeed for signed-in users.
