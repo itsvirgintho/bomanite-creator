@@ -266,12 +266,18 @@ Role visibility additions for the new real roles: Superintendente de Obra sees p
 Business access: Pablo (Director, org role + `portfolio.view`) reaches all org projects and reads the financial classes his explicit permissions cover; Residente reads assigned project only, 0 rows for any unrelated project; Maestro assigned project only and 0 rows from all three financial tables; Anonymous 0 rows everywhere. Plus expired membership → no access; inactive membership → no access; override deny removes a role-granted project permission; override allow grants one; unauthorized project URL renders the unavailable state; direct PostgREST query with a known UUID returns empty.
 
 Scope and membership-plane tests:
-- Diego Residente: organization membership exists with `role_id = NULL`; only the Maraluna project membership grants access; any other DFN project returns zero rows; adding/keeping an organization membership alone never creates project access; at F2 he reads `project_cost_financials` for Maraluna only if his project role explicitly holds `financial.cost_view`, and reads 0 rows from contract and executive tables.
-- Miguel: Superintendente permissions apply only inside explicitly assigned projects; unassigned projects return zero rows unless a separately configured organization-level role is granted.
-- Pablo: the organization Director role with `portfolio.view` grants the intended portfolio/global project access.
+- Scope comes from `role_permissions.scope`, not from the permission row: the same code (`financial.cost_view`) resolves at organization scope for Director General and at project scope for Residente, with no duplicated codes.
+- A project-scoped mapping on an organization role never becomes an organization-wide permission; an organization-scoped mapping is ignored on the project plane.
+- Passive organization membership (`role_id = NULL`, F0) grants nothing: no portfolio, no project, no financial rows.
+- Diego Residente: organization membership with `role_id = NULL`; only the Maraluna project membership grants access; any other DFN project returns zero rows; at F2 he reads `project_cost_financials` for Maraluna only if his project role holds `financial.cost_view` at project scope, and reads 0 rows from contract and executive tables.
+- Miguel: Superintendente permissions apply only inside explicitly assigned projects; unassigned projects return zero rows.
+- Ricardo: Maestro reaches only his assigned project.
+- Pablo: the organization Director role with organization-scoped `portfolio.view` grants portfolio access organization-wide.
 - Cecy: organization-scoped Contabilidad permissions support cross-project accounting flows; F2 accounting access exposes neither `project_contract_financials` nor `project_executive_financials`.
-- Almacén: organization-scoped warehouse permission may expose the future cross-project warehouse queue; all three financial tables return 0 rows.
-- A project-scoped permission mapped onto an organization role does not grant organization-wide project access.
+- Almacén: organization-scoped warehouse permissions may expose the future cross-project warehouse queue; all three financial tables return 0 rows.
+- Project and project_location writes from the browser fail at the GRANT level (SELECT-only), for every role including Superadmin.
+- Normal users cannot grant themselves permissions, memberships or a higher financial level by any path.
+
 
 Financial-table isolation tests:
 - An F2 user with `financial.cost_view` reads allowed `project_cost_financials` rows and gets 0 rows / permission denied from contract and executive tables.
