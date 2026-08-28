@@ -1,357 +1,248 @@
-# DFN Control — Foundation Phase 2
+# Foundation Phase 2 — Migration Batch 1 (SQL PROPOSAL, not executed)
 
-Core backend + real authorization. Replaces the mocked identity/project foundation with Supabase Auth, real membership, RBAC, financial levels, locations, audit and RLS — while preserving the Phase 1 shell, routes and components.
+Scope: `private` schema, reusable `updated_at` trigger function, `organizations`, `business_units`, `profiles`, the auth→profile shell trigger, and immediate lockdown. No RBAC, no projects, no helpers, no seeds, no app changes.
 
-## 1. Architecture
+## 1. Design decisions
 
-- Identity: Supabase Auth (email/password only, no public sign-up). `profiles` mirrors `auth.users` 1:1.
-- Authorization resolved in the database, never in the UI. Frontend reads an "access context" (profile + org membership + project memberships + effective permissions + financial level) exposed through server functions. No views are created in Phase 2; if one is ever added it must be `WITH (security_invoker = true)`.
-- Two membership planes: organization-level (Director, Contabilidad, Administración) and project-level (Residente, Supervisor, Maestro, etc.). Project role wins inside a project; org role provides global reach.
-- Permissions are a catalog + role mappings + per-project-member overrides. No role-name string checks in code; the client uses permission codes only for UI visibility.
-- Helper logic lives in a non-exposed `private` schema (never added to the Data API exposed schemas), `SECURITY DEFINER` only where RLS recursion/bypass is genuinely required, `set search_path = ''`, every relation and function fully qualified. Privileges are least-privilege **per function** — see section 6.
-- Sensitive money is **split by sensitivity class into three tables** — `project_cost_financials` (F2), `project_contract_financials` (F3), `project_executive_financials` (F4) — because RLS is row-level, not column-level. Each has its own policy requiring the matching financial level **and** an explicit financial permission.
-- **Platform administration is a third, independent plane** (`private.platform_admins`), unrelated to business role and financial level. In Phase 2 all sensitive administrative writes are Superadmin-only. See section 2b.
+- **`private` schema now, empty of authorization logic.** Created in Batch 1 only so the reusable trigger function has a non-exposed home. No `USAGE` to `anon`/`authenticated` in this batch — nothing here is called from a policy yet.
+- **`updated_at` function is NOT SECURITY DEFINER.** It only rewrites `NEW.updated_at` inside the row being written; it needs no elevated privilege. Triggers execute regardless of the caller's EXECUTE privilege, so `EXECUTE` is revoked from `PUBLIC`, `anon`, `authenticated`. It is generic (`set updated_at = now()`) and reusable by every future table.
+- **`first_name` / `last_name` are NULLABLE.** Users are created manually in the Supabase Auth Dashboard, which sends no `raw_user_meta_data`. A `NOT NULL` column would make the AFTER INSERT trigger raise and **Auth user creation itself would fail**. The profile is a *shell*: identity completeness (names, employee_code, job_title) is filled later by the reviewed bootstrap/admin process. `is_active` defaults to `true` but grants nothing — authorization comes from membership tables in later batches.
+- **The handle-new-user function is SECURITY DEFINER** — required, because the trigger runs in the `auth` insert context and must write to `public.profiles` regardless of the inserting role. It is unreachable as an API: `private` is not an exposed Data API schema, `EXECUTE` is revoked from `PUBLIC`/`anon`/`authenticated`, it takes no arguments, returns `trigger` (so it cannot be called as a normal function at all), and it derives the id from `NEW.id` only — a caller could never pass a target user id.
+- **Trigger is deliberately minimal** — one INSERT, `ON CONFLICT (id) DO NOTHING`, no memberships, no roles, no lookups. Nothing in it can block Auth signup other than a catastrophic DB failure.
+- **Identity is the UUID, never the email.** No email column on `profiles`.
+- **Delete behavior:** `profiles.id → auth.users(id) ON DELETE CASCADE` (profile shell only, per approved architecture). `business_units.organization_id → organizations(id) ON DELETE RESTRICT` — business history must survive; organizations are deactivated (`is_active = false`), not deleted.
+- **Lockdown first.** RLS is enabled on all three tables in the same migration that creates them, with **no policies at all**. Even if Batch 1 shipped alone, RLS-enabled + no policy = zero rows for `anon` and `authenticated`, and grants are revoked on top of that (defense in depth).
+- **No index beyond what PK/UNIQUE already create**, plus one FK index on `business_units.organization_id` (Postgres does not create it automatically and every join/cascade check uses it) and one partial index on active organizations. Nothing else — the database is empty.
 
-### 2b. Platform Superadmin layer
+## 2. Proposed SQL
 
-`private.platform_admins` (not in `public`, not exposed through the Data API, no grants to `anon`/`authenticated`): id, user_id FK → auth.users (ON DELETE CASCADE), admin_level (CHECK in ('superadmin') for now, extensible), is_active, created_at, created_by. Partial unique on (user_id) WHERE is_active.
+```sql
+-- ============================================================
+-- DFN Control — Foundation Phase 2 — Migration Batch 1
+-- Core schema foundation: private schema, organizations,
+-- business_units, profiles, auth->profile shell trigger, lockdown.
+-- No RBAC, no projects, no seed data.
+-- ============================================================
 
-Separation rules:
-- Superadmin ≠ Director General, ≠ F4, ≠ any org or project role. F4 never implies administration; administration never implies financial visibility.
-- A Superadmin who must also see business data receives an explicit organization membership (e.g. Director General + F4). Business reads stay governed by the normal membership/financial policies.
-- Helper: `private.is_superadmin()` — **no arguments**; reads `auth.uid()` internally and returns false when it is null. STABLE, SECURITY DEFINER, `search_path = ''`, fully qualified `private.platform_admins`, true only for an active row, boolean return only. `authenticated` receives `USAGE ON SCHEMA private` and `EXECUTE` on this function so policies evaluate under the caller; `anon` and `PUBLIC` are revoked; the schema stays outside the exposed Data API schemas.
-- RLS behavior: no BYPASSRLS role is ever used from the browser, and **Superadmin status grants the browser no write privileges**. In Phase 2 `authenticated` has SELECT only on every table, so organizations, business_units, roles, role_permissions, organization_members, project_members, overrides, financial levels, the three project financial tables, project rows, locations, profile activation and platform/security configuration have **no client mutation path at all**. Initial configuration is performed with reviewed bootstrap/admin SQL. Superadmin does not get a blanket `is_superadmin() OR ...` SELECT on business tables; the single documented global read exception is audit access. When the Administration module is built later, sensitive writes will go through narrowly scoped trusted server functions that verify Superadmin server-side.
-- Delegated administration is future-ready but not granted now: `admin.organization.manage`, `admin.business_unit.manage`, `admin.user.manage`, `admin.membership.manage`, `admin.project.manage`, `admin.role.manage`, `admin.permission.manage` are seeded in the catalog and mapped to no role. Director General never receives them automatically.
-- Auth user management (future, not built in Phase 2): Superadmin browser → authenticated TanStack server function → verify `private.is_superadmin()` server-side → call the Supabase Auth admin API with the service-role key held only in the server runtime → create/invite/deactivate. The secret never reaches frontend code, and the client never calls the admin API directly. For Phase 2, test users are created manually in the Supabase dashboard.
-- Navigation readiness only: `src/config/navigation.ts` gains an `admin` group (`/administracion`, `/usuarios`, `/roles`, `/proyectos`, `/permisos`) rendered solely when the access context reports `isSuperadmin`. The routes and module screens are not built in Phase 2.
+-- ---------- 1. private schema ----------
+CREATE SCHEMA IF NOT EXISTS private;
 
+REVOKE ALL ON SCHEMA private FROM PUBLIC;
+REVOKE ALL ON SCHEMA private FROM anon;
+REVOKE ALL ON SCHEMA private FROM authenticated;
+-- No USAGE granted in Batch 1. Policy helpers arrive in a later batch
+-- and will each receive an individual USAGE + EXECUTE grant.
 
+-- ---------- 2. reusable updated_at trigger function ----------
+CREATE OR REPLACE FUNCTION private.set_updated_at()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  NEW.updated_at := now();
+  RETURN NEW;
+END;
+$$;
 
-## 2. Tables and fields
+REVOKE ALL ON FUNCTION private.set_updated_at() FROM PUBLIC;
+REVOKE ALL ON FUNCTION private.set_updated_at() FROM anon;
+REVOKE ALL ON FUNCTION private.set_updated_at() FROM authenticated;
+-- Not SECURITY DEFINER: it needs no elevated privilege.
+-- Triggers fire regardless of the caller's EXECUTE privilege.
 
-Types first: `financial_level` as constrained `smallint CHECK (between 0 and 4)` — preferred over enum because it is ordinal and comparable (`>= 3`), and adding levels later needs no type migration. Status fields use enums or CHECK-constrained text (project status, location status, member state).
+-- ---------- 3. public.organizations ----------
+CREATE TABLE public.organizations (
+  id                uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  name              text        NOT NULL,
+  legal_name        text        NOT NULL,
+  tax_id            text        NULL,
+  country           text        NOT NULL DEFAULT 'MX',
+  timezone          text        NOT NULL DEFAULT 'America/Mazatlan',
+  default_currency  text        NOT NULL DEFAULT 'MXN',
+  is_active         boolean     NOT NULL DEFAULT true,
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT organizations_name_not_blank
+    CHECK (length(btrim(name)) > 0),
+  CONSTRAINT organizations_legal_name_not_blank
+    CHECK (length(btrim(legal_name)) > 0),
+  CONSTRAINT organizations_country_iso2
+    CHECK (country ~ '^[A-Z]{2}$'),
+  CONSTRAINT organizations_currency_iso3
+    CHECK (default_currency ~ '^[A-Z]{3}$'),
+  CONSTRAINT organizations_timezone_not_blank
+    CHECK (length(btrim(timezone)) > 0)
+);
 
-- **organizations**: id, name, legal_name, tax_id?, country, timezone, default_currency, is_active, created_at.
-- **business_units**: id, organization_id FK, name, code, is_active, created_at. Unique (organization_id, code).
-- **profiles**: id PK/FK → auth.users (CASCADE for the profile row only, while business tables reference `profiles` with RESTRICT/SET NULL so history survives), first_name, last_name, phone?, avatar_path?, job_title?, employee_code?, is_active, created_at, updated_at. Created by an `AFTER INSERT ON auth.users` trigger (SECURITY DEFINER). Deactivation (`is_active = false`) is the normal offboarding path, not deletion. **No unrestricted UPDATE grant to `authenticated`** — RLS is row-level, not column-level, so self-editing goes through a narrow protected function `public.update_own_profile(first_name, last_name, phone, avatar_path)` (SECURITY DEFINER, `search_path = ''`, writes only those columns for `auth.uid()`, EXECUTE granted to `authenticated`). `is_active`, `employee_code` and any future authorization field are writable only through Superadmin-protected paths.
-- **roles**: id, organization_id nullable (NULL = system role shared by all orgs), code, name, default_financial_level, is_system_role, is_active. Unique (coalesce(organization_id), code). Seeded with the 12 approved DFN business roles: Director General, Director Construcción/Operaciones, Gerente/Coordinador de Proyecto, Superintendente de Obra, Residente de Obra, Supervisor, Maestro de Obra, Control de Obra/Costos, Compras, Almacén, Contabilidad, Administración. Platform Superadmin is not in this catalog.
-- **permissions**: id, code unique, name, category, description. **No `scope` column** — scope is not an intrinsic property of a code.
-- **role_permissions**: role_id, permission_id, **scope** text NOT NULL CHECK in ('platform','organization','project'), PK(role_id, permission_id, scope). Scope describes *how a role receives* the permission, so the same code may be organization-scoped for one role and project-scoped for another (e.g. `financial.cost_view`: organization for Director General, project for Residente). Codes are never duplicated to express scope.
+CREATE INDEX organizations_active_idx
+  ON public.organizations (id) WHERE is_active;
 
-- **organization_members**: id, organization_id, user_id, **role_id NULLABLE**, financial_level (default 0), is_active, starts_at, ends_at?, created_at, created_by. Partial unique index on (organization_id, user_id) WHERE is_active. A row with `role_id = NULL` and level F0 means only "this user belongs to DFN" and grants nothing by itself.
-- **projects**: id, organization_id, business_unit_id?, project_code, name, client_name, description, project_type, address, latitude, longitude, contract_start_date, contract_end_date, actual_start_date?, actual_end_date?, status, cover_photo_path?, manager_user_id?, created_at, archived_at?. Unique (organization_id, project_code). No money columns.
-- **project_cost_financials** (F2 class): project_id PK/FK, approved_budget numeric(16,2), forecast_cost numeric(16,2), currency, updated_at, updated_by.
-- **project_contract_financials** (F3 class): project_id PK/FK, contract_value numeric(16,2), approved_change_value numeric(16,2), currency, updated_at, updated_by.
-- **project_executive_financials** (F4 class): project_id PK/FK, target_margin numeric(7,4), updated_at, updated_by. `target_margin` is a **rate**, not an amount: 0.1250 = 12.50 % target margin, CHECK between -1 and 1. Absolute margin amounts are derived at query time from contract and cost values, never stored here. No collection/payment rows live in any of these summary tables; future collections derive from dedicated client-invoice/payment entities.
-- **project_members**: id, project_id, user_id, role_id, financial_level, starts_at, ends_at?, is_active, assigned_by, created_at. Partial unique (project_id, user_id) WHERE is_active.
-- **project_member_permission_overrides**: id, project_member_id, permission_id, allowed bool, valid_from, valid_until?, granted_by, created_at. Unique (project_member_id, permission_id, valid_from). **No scope column** — an override is inherently project-scoped: it only allows/denies project-scoped permissions for that one membership, never organization permissions and never platform Superadmin status.
+ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
 
-- **project_locations**: id, project_id, parent_location_id? FK → self (ON DELETE RESTRICT), location_type, code, name, description, sort_order, status, created_at, created_by, archived_at?. Indexes on (project_id, parent_location_id) and (project_id, sort_order). CHECK (id <> parent_location_id) blocks self-parenting; deeper cycles are prevented by a BEFORE INSERT/UPDATE trigger that walks ancestors recursively and raises on revisit, plus a CHECK that parent belongs to the same project.
-- **audit_logs**: id, organization_id, project_id?, actor_user_id, actor_name_snapshot, action, entity_type, entity_id, old_values jsonb, new_values jsonb, ip_address?, user_agent?, created_at. Append-only: no UPDATE/DELETE grants or policies for `authenticated`; writes happen through SECURITY DEFINER triggers/functions.
+REVOKE ALL ON TABLE public.organizations FROM PUBLIC;
+REVOKE ALL ON TABLE public.organizations FROM anon;
+REVOKE ALL ON TABLE public.organizations FROM authenticated;
+GRANT ALL ON TABLE public.organizations TO service_role;
+-- No policies in Batch 1: RLS on + zero policies = zero rows for
+-- anon/authenticated even if a grant were ever added by accident.
 
-Delete behavior: RESTRICT for roles, projects, memberships referenced by history; SET NULL for optional actor references; CASCADE only for overrides under their member row and profile under auth user.
+-- ---------- 4. public.business_units ----------
+CREATE TABLE public.business_units (
+  id               uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id  uuid        NOT NULL
+                   REFERENCES public.organizations (id) ON DELETE RESTRICT,
+  name             text        NOT NULL,
+  code             text        NOT NULL,
+  is_active        boolean     NOT NULL DEFAULT true,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT business_units_org_code_key UNIQUE (organization_id, code),
+  CONSTRAINT business_units_name_not_blank
+    CHECK (length(btrim(name)) > 0),
+  CONSTRAINT business_units_code_format
+    CHECK (code ~ '^[A-Z0-9][A-Z0-9_-]{0,31}$')
+);
 
-## 3. Relationship diagram
+CREATE INDEX business_units_organization_id_idx
+  ON public.business_units (organization_id);
 
-```text
-auth.users 1─1 profiles
-organizations 1─* business_units
-organizations 1─* organization_members *─0..1 roles   (role_id NULLABLE)
-organizations 1─* projects *─0..1 business_units
-projects 1─0..1 project_cost_financials        (F2 + financial.cost_view)
-projects 1─0..1 project_contract_financials    (F3 + financial.contract_view)
-projects 1─0..1 project_executive_financials   (F4 + financial.margin_view)
+ALTER TABLE public.business_units ENABLE ROW LEVEL SECURITY;
 
+REVOKE ALL ON TABLE public.business_units FROM PUBLIC;
+REVOKE ALL ON TABLE public.business_units FROM anon;
+REVOKE ALL ON TABLE public.business_units FROM authenticated;
+GRANT ALL ON TABLE public.business_units TO service_role;
 
-projects 1─* project_members *─1 roles
-project_members 1─* project_member_permission_overrides *─1 permissions
-projects 1─* project_locations ─* (self, recursive)
-roles *─* permissions (role_permissions, PK role_id+permission_id+scope)
-organizations 1─* audit_logs *─0..1 projects
+-- ---------- 5. public.profiles ----------
+CREATE TABLE public.profiles (
+  id             uuid        PRIMARY KEY
+                 REFERENCES auth.users (id) ON DELETE CASCADE,
+  first_name     text        NULL,
+  last_name      text        NULL,
+  phone          text        NULL,
+  avatar_path    text        NULL,
+  job_title      text        NULL,
+  employee_code  text        NULL,
+  is_active      boolean     NOT NULL DEFAULT true,
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  updated_at     timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT profiles_employee_code_format
+    CHECK (employee_code IS NULL OR length(btrim(employee_code)) > 0),
+  CONSTRAINT profiles_phone_format
+    CHECK (phone IS NULL OR length(btrim(phone)) > 0)
+);
+
+-- employee_code must be unique when present, but is optional at shell creation.
+CREATE UNIQUE INDEX profiles_employee_code_key
+  ON public.profiles (employee_code) WHERE employee_code IS NOT NULL;
+
+CREATE TRIGGER profiles_set_updated_at
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION private.set_updated_at();
+
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE public.profiles FROM PUBLIC;
+REVOKE ALL ON TABLE public.profiles FROM anon;
+REVOKE ALL ON TABLE public.profiles FROM authenticated;
+GRANT ALL ON TABLE public.profiles TO service_role;
+
+-- ---------- 6. auth.users -> profile shell ----------
+CREATE OR REPLACE FUNCTION private.handle_new_auth_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  INSERT INTO public.profiles (id, first_name, last_name)
+  VALUES (
+    NEW.id,
+    nullif(btrim(coalesce(NEW.raw_user_meta_data ->> 'first_name', '')), ''),
+    nullif(btrim(coalesce(NEW.raw_user_meta_data ->> 'last_name',  '')), '')
+  )
+  ON CONFLICT (id) DO NOTHING;
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION private.handle_new_auth_user() FROM PUBLIC;
+REVOKE ALL ON FUNCTION private.handle_new_auth_user() FROM anon;
+REVOKE ALL ON FUNCTION private.handle_new_auth_user() FROM authenticated;
+
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION private.handle_new_auth_user();
 ```
 
-## 4. Access resolution algorithm (deterministic, scope-aware)
+## 3. Section-by-section explanation
 
-Scope lives on `role_permissions`, not on `permissions`. A mapping is only honored on the plane matching `role_permissions.scope`. **An organization role holding a project-scoped mapping never converts it into organization-wide access, and a project-scoped mapping never leaks to the organization plane.**
+1. **`private` schema** — non-exposed namespace. Not added to the Data API exposed schemas (that setting stays `public` only). No `USAGE` yet, deliberately.
+2. **`private.set_updated_at()`** — generic, table-agnostic, plpgsql, `search_path = ''`, no relations referenced so nothing to qualify. Touches only `NEW.updated_at`; never authorization fields, actor identity or business fields.
+3. **`organizations`** — `gen_random_uuid()` PK (pgcrypto is built into Supabase). `tax_id` nullable (foreign/unregistered entities). Defaults `MX` / `America/Mazatlan` / `MXN` match DFN reality and keep future inserts safe. Format CHECKs are cheap and immutable (no `now()` in CHECKs). Partial index on active orgs; no other index on an empty table.
+4. **`business_units`** — `UNIQUE (organization_id, code)` as required; explicit FK index because Postgres does not create one and `ON DELETE RESTRICT` checks use it. `RESTRICT` protects business history.
+5. **`profiles`** — id is both PK and FK to `auth.users` with `ON DELETE CASCADE` (shell row only). No email, no password, no role, no organization_id, no financial level. `employee_code` unique only when present, via a partial unique index so many shells with NULL coexist.
+6. **Auth trigger** — `AFTER INSERT ... FOR EACH ROW`, reads metadata defensively (missing keys yield NULL, blank strings normalize to NULL), `ON CONFLICT DO NOTHING` so a re-created id or a manual pre-seeded profile never raises.
 
-1. `uid = auth.uid()`; require `profiles.is_active = true`. Otherwise nothing is granted.
-2. Org plane: the active `organization_members` row (starts_at <= now, ends_at null or > now, is_active). If `role_id IS NULL`, the user is merely a DFN member: **zero organization permissions, organization financial level treated as F0**, no project reach. If `role_id` is set, org permissions = that role's mappings **with `role_permissions.scope = 'organization'`** only.
-3. Project plane, per project P: the active `project_members` row for P. Project permissions = that role's mappings **with `role_permissions.scope = 'project'`**, then apply overrides for that membership valid at now(): `allowed = false` wins over any grant; `allowed = true` adds. Overrides affect the project set only.
+## 4. Exact objects created
 
-4. Project visibility is two distinct, non-interchangeable paths:
-   - **A. Direct project access** — an active `project_members` row for P (with the relevant project permission for the action).
-   - **B. Organization portfolio access** — an explicit organization-scoped permission such as `portfolio.view` held by an org role (Director General, authorized Contabilidad, authorized management). This is deliberately assigned, never implied by a job title.
-   Residente, Maestro, Supervisor and project-scoped Superintendente therefore see only their assigned projects; an organization membership alone never creates project access.
-5. Effective financial level for project P:
-   - base = project membership `financial_level` when an active membership exists, else 0;
-   - the organization membership level supplements it **only when the org role holds the organization-scoped authority covering that data class** (i.e. path B applies to P and the org role holds the required `financial.*` permission at organization scope);
-   - otherwise `effective = project level`. Never a blanket `max(org, project)`; a passive membership (role NULL, F0) contributes nothing.
-6. Financial reads are per sensitivity table, each with its own policy — no single policy spans classes. Each requires visibility, level and the financial permission **through the matching access path**:
-   - Direct project path: active project membership + the code mapped at `scope = 'project'` for the project role.
-   - Organization/global path: active org membership with non-null role + the code mapped at `scope = 'organization'`.
-   - `project_cost_financials`: visibility **and** effective level >= 2 **and** `financial.cost_view` on the same path.
-   - `project_contract_financials`: visibility **and** effective level >= 3 **and** `financial.contract_view` on the same path.
-   - `project_executive_financials`: visibility **and** effective level >= 4 **and** `financial.margin_view` on the same path.
-   The two paths are evaluated separately and never merged ambiguously. Consequences: Cecy (Contabilidad F2 + organization-scoped accounting codes) reads neither contract nor executive rows; Almacén (F0/F1) reads none of the three; Diego Residente (F2) reads cost rows only if his project role has `financial.cost_view` at project scope; Miguel (F3) reads cost/contract only with the explicit project-scoped permissions on assigned projects; Pablo (F4) reads all three through organization-scoped mappings plus level; Superadmin platform status alone grants nothing on these tables.
+Schema `private`. Functions `private.set_updated_at()`, `private.handle_new_auth_user()`. Tables `public.organizations`, `public.business_units`, `public.profiles`. Triggers `profiles_set_updated_at` (on `public.profiles`), `on_auth_user_created` (on `auth.users`). Indexes: 3 PK indexes, `business_units_org_code_key`, `organizations_active_idx`, `business_units_organization_id_idx`, `profiles_employee_code_key`.
 
-7. Organization scoping is explicit: the organization_id always comes from the protected resource or from the caller's membership row passed into the helper. There is no ambiguous `private.current_org()`; if it is ever reintroduced it must raise on more than one active organization membership rather than silently picking the first.
+Nothing else is altered. No existing object is dropped or modified.
 
+## 5. Privilege and RLS state after Batch 1
 
-## 5. GRANTs and RLS per table
+| Role | organizations | business_units | profiles | schema private |
+|---|---|---|---|---|
+| `anon` | none | none | none | none |
+| `authenticated` | none | none | none | none (no USAGE) |
+| `PUBLIC` | none | none | none | none |
+| `service_role` | ALL | ALL | ALL | none needed |
 
-GRANT decides whether a role may attempt an operation; RLS decides which rows. Both are specified explicitly; Supabase default privileges are not relied upon. Every table starts with `REVOKE ALL ... FROM PUBLIC, anon;` — `anon` receives no privilege on any DFN business table. `service_role` receives `ALL` on public tables for server-side maintenance. RLS is enabled on every public table.
+RLS: **enabled on all three tables, zero policies**. Both barriers hold independently — a client would be blocked by the missing grant, and blocked again by RLS returning no rows. Function EXECUTE is revoked from `PUBLIC`/`anon`/`authenticated` on both functions; both are still invoked normally because trigger execution does not consult EXECUTE privileges.
 
-**Phase 2 rule: `authenticated` receives SELECT only, on every table.** No generic client INSERT/UPDATE/DELETE exists anywhere in this phase, including `projects` and `project_locations` — no project-administration or location-editor UI is being built. Initial configuration is done with reviewed bootstrap/admin SQL. Being Superadmin does **not** give the browser unrestricted write grants; later administration will run through narrowly scoped trusted server functions that verify Superadmin server-side.
+`service_role` receives `ALL` because it is the server-side/administrative path required by the approved architecture (bootstrap script, future trusted server functions). It bypasses RLS by design and never reaches the browser.
 
-| Table | GRANT to `authenticated` | SELECT policy | Client writes in Phase 2 |
-|---|---|---|---|
-| organizations | SELECT | active org member | none |
-| business_units | SELECT | active org member | none |
-| profiles | SELECT | self, or same-org member | none — self edits only via `public.update_own_profile` |
-| organization_members | SELECT | own rows only (where permitted) | none |
-| roles | SELECT | active org member (read-only catalog) | none |
-| permissions | SELECT | active org member | none |
-| role_permissions | SELECT | active org member | none |
-| projects | SELECT | `private.can_access_project(id)` | none (`project.edit` is seeded for future protected APIs, not a row UPDATE grant) |
-| project_cost_financials | SELECT | visibility + level >= 2 + `financial.cost_view` on the matching path | none |
-| project_contract_financials | SELECT | visibility + level >= 3 + `financial.contract_view` on the matching path | none |
-| project_executive_financials | SELECT | visibility + level >= 4 + `financial.margin_view` on the matching path | none |
-| project_members | SELECT | own rows, or members of projects the caller can access | none |
-| project_member_permission_overrides | SELECT | via parent member visibility | none |
-| project_locations | SELECT | `private.can_access_project(project_id)` | none (future protected mutation path) |
-| audit_logs | SELECT | `audit.view` scoped to org/project, or Superadmin | none; written only by definer triggers/functions |
-| private.platform_admins | none | none from the client (schema not exposed) | none from the client; set by the one-time bootstrap script |
+**Separate recommendation, deliberately NOT in this SQL:** `ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated;` would make every future table locked-by-default. It is attractive but it silently changes behavior for objects Lovable tooling may create later, and it can mask a forgotten explicit grant. Recommendation: keep explicit per-table grants (as every later batch already specifies) and skip the default-privileges change unless you want it as its own reviewed migration.
 
+## 6. Trigger behavior and failure considerations
 
-Security-bearing rows (`organization_members`, `project_members`, overrides, `roles`, `role_permissions`, and the three financial tables) therefore have **no client mutation grant at all** in Phase 2 — a normal user cannot even attempt the write, so correctness does not depend on subtle RLS expressions. Each financial table gets its own single-class SELECT policy; no policy covers more than one sensitivity class.
+- Dashboard-created user with no metadata → profile shell with NULL names. Signup succeeds.
+- Metadata present → names copied, trimmed, blanks normalized to NULL.
+- Duplicate/replayed id → `ON CONFLICT DO NOTHING`, no error.
+- The function performs a single INSERT with no lookups, no joins, no FK to a table that may be empty — nothing to fail on.
+- Residual risk: any exception inside an AFTER INSERT trigger on `auth.users` rolls back the Auth user creation. This is why the body is one statement and why the name columns are nullable. Optionally the INSERT could be wrapped in `EXCEPTION WHEN OTHERS THEN RETURN NEW;` to make signup unblockable, at the cost of silently missing profiles — **recommendation: do not swallow errors**; a missing profile is worse than a visible failure, and the current body has no realistic failure mode.
 
-Dependency graph (avoids recursion): policies on business tables call `private.*` SECURITY DEFINER helpers, which read membership tables with RLS bypassed. Membership tables' own policies use only `auth.uid()` comparisons or `private.is_superadmin()` — never a policy on the same table it queries. `private.platform_admins` has no client-reachable policy, so `is_superadmin` cannot recurse.
+## 7. Security review
 
-## 6. Helper functions (schema `private`) — least privilege per function
+- No table is reachable by `anon` or `authenticated`, by grant or by policy.
+- `private` is unexposed and ungranted; neither function is callable as an RPC (both return `trigger`, which PostgREST cannot invoke anyway).
+- `handle_new_auth_user` cannot be abused as a mutation API: no arguments, id taken from `NEW.id`, unreachable from the client.
+- No secrets, personal data, emails, passwords or environment UUIDs.
+- No `DROP`, no `CASCADE`, no changes to `auth`/`storage`/`realtime`/`vault` objects other than the supported `AFTER INSERT` trigger on `auth.users`.
+- Expected linter notices after this batch: "table has RLS enabled but no policies" on all three tables — intentional in Batch 1.
 
-The `private` schema is never added to the Supabase Data API exposed schemas, so nothing here is published as an RPC endpoint. Two distinct classes:
+## 8. Rollback considerations
 
-**A. Internal policy helpers** — referenced inside RLS policies, so the *caller* must be able to execute them. `GRANT USAGE ON SCHEMA private TO authenticated;` plus `GRANT EXECUTE` on each named function individually — never `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA private`, and no default privileges. All are STABLE, SECURITY DEFINER (required to read membership tables without recursion), `set search_path = ''`, fully qualified, boolean/scalar return only, and revoked from `PUBLIC` and `anon`:
+Forward-only. A corrective migration would drop, in order: `on_auth_user_created`, `profiles_set_updated_at`, `public.profiles`, `public.business_units`, `public.organizations`, both `private` functions, then `private` — each without `CASCADE`. Dropping the auth trigger is the single highest-priority rollback step if Auth signup ever breaks; it can be dropped alone, leaving the tables intact.
 
-`private.is_superadmin()` — **no argument**; resolves `auth.uid()` internally, returns false when it is null, boolean only. There is no Phase 2 need for a caller to ask whether an arbitrary UUID is Superadmin. Also: `private.is_organization_member(uuid)`, `private.has_org_permission(text)` (honors only mappings with `role_permissions.scope = 'organization'` for the caller's active org role, and only when that role is non-null), `private.is_project_member(uuid)`, `private.can_access_project(uuid)` (direct membership OR explicit organization-scoped portfolio permission), `private.has_project_permission(uuid, text)` (honors only mappings with `scope = 'project'` for the active project membership, then applies valid overrides), `private.effective_financial_level(uuid)` (implements §4.5; no blanket `max(org, project)`), and `private.can_read_financial_class(uuid, smallint, text)`, which checks visibility, level and the financial code **on the same access path** for the three financial-table policies.
+## 9. Uncertainties to confirm
 
-**B. Privileged mutation functions** — administrative or write-capable definer functions. `REVOKE ALL FROM PUBLIC, anon, authenticated`; EXECUTE is granted only when the function *is* the intentional protected API for that operation, and the function verifies the caller itself (`private.is_superadmin()` or the required permission) before mutating. The audit-write functions stay unreachable from the client and are invoked only by triggers.
+1. **Timezone/currency defaults** — `America/Mazatlan` and `MXN` assumed from DFN's location. Confirm or make them explicit-required with no default.
+2. **`business_units.code` format** — uppercase alnum/`_`/`-`, max 32 chars assumed (e.g. `BOMANITE_CABO`). Confirm the convention before it is seeded.
+3. **`organizations.legal_name` NOT NULL** — assumed always known. Say so if some organizations may lack one.
+4. **Trigger error swallowing** — recommendation is not to swallow; confirm you agree.
+5. **Default privileges recommendation** — presented separately in §5; confirm whether you want it as its own later migration.
 
-`public.update_own_profile(_first_name, _last_name, _phone, _avatar_path)` is the one deliberately client-callable protected mutation in Phase 2. Contract: **no target user_id argument ever** (the row is always `auth.uid()`); requires `auth.uid() IS NOT NULL`; requires the caller's `public.profiles.is_active = true`, otherwise it raises; updates only those four self-service columns; never touches `is_active`, `employee_code` or any authorization field; SECURITY DEFINER with `search_path = ''` and fully qualified relations/functions; `REVOKE EXECUTE FROM PUBLIC, anon`; `GRANT EXECUTE TO authenticated` only.
+## 10. Batch 1 acceptance checklist
 
-No views are created in Phase 2. Any future view exposed to `authenticated` must be `WITH (security_invoker = true)` so caller RLS applies.
-
-
-
-## 7. Migration order (small, reviewable)
-
-1. `private` schema + shared types/CHECK domains + `updated_at` trigger fn.
-2. organizations, business_units.
-3. profiles + auth.users trigger.
-4. roles, permissions, role_permissions.
-5. organization_members.
-6. projects, then `project_cost_financials`, `project_contract_financials`, `project_executive_financials` (each its own small migration so policies stay reviewable per sensitivity class).
-7. project_members, overrides.
-8. project_locations (+ cycle trigger).
-9. audit_logs + audit write function/triggers.
-10. `private.platform_admins`.
-11. private helper functions (including `is_superadmin`) + `public.update_own_profile`.
-12. Explicit REVOKE/GRANT statements (schema USAGE, per-function EXECUTE, SELECT-only table privileges for `authenticated`) and RLS policies for all of the above. No client write grants are issued in this phase.
-13. Seed reference data (12 roles, permission catalog, role mappings) — no personal identifiers.
-
-Each step is a separate migration presented for approval. The identity bootstrap is NOT a migration: it is a separate one-time reviewed script (section 9).
-
-## 8. Permission catalog (including Materials/Warehouse readiness)
-
-The catalog is seeded in full in Phase 2 even though several codes have no screen yet. Categories: `project`, `admin`, `audit`, `financial`, `expense`, `vendor_invoice`, `client_invoice`, `reimbursement`, `material_request`, `warehouse`, `shipment`, `material_receipt`, `material_issue`.
-
-Codes are scope-free. Scope is recorded per mapping in `role_permissions.scope`, so the same code can be organization-scoped for one role and project-scoped for another. Typical seeded mappings:
-
-| Role | Codes | Mapping scope |
-|---|---|---|
-| Director General | `portfolio.view`, `financial.cost_view`, `financial.contract_view`, `financial.margin_view`, `financial.collection_view` where appropriate, executive/reporting codes | organization |
-| Contabilidad | accounting codes (`expense.*`, `vendor_invoice.*`, `client_invoice.*`, `reimbursement.*`) | organization |
-| Almacén | `warehouse.*`, `shipment.*` | organization |
-| Superintendente de Obra | `project.view`, operational project codes, `material_request.view_project`, `.review`, `.approve`, `.reject`, `.return` | project |
-| Residente de Obra | `project.view`, `material_request.create/.submit/.view_own/.view_project`, `material_receipt.confirm`, `material_damage.report`, `material_shortage.report`, and `financial.cost_view` only if explicitly intended | project |
-| Maestro de Obra | `project.view`, `material_request.create/.submit/.view_own`, `material_receipt.confirm`, `material_damage.report`, `material_shortage.report` | project |
-| (none in Phase 2) | `admin.*` | platform |
-
-A project-scoped mapping grants nothing organization-wide; it is only honored inside projects the user actually reaches through §4.4. An organization-scoped mapping is honored only when the org membership has a non-null role.
-
-
-Administration codes are seeded but mapped to **no role** in Phase 2 (Superadmin-only writes cover these operations for now): `admin.organization.manage`, `admin.business_unit.manage`, `admin.user.manage`, `admin.membership.manage`, `admin.project.manage`, `admin.role.manage`, `admin.permission.manage`. The generic `user.manage` key is retired as an authorization key. Financial codes are explicit per class: `financial.cost_view` (F2 → `project_cost_financials`), `financial.contract_view` (F3 → `project_contract_financials`), `financial.margin_view` (F4 → `project_executive_financials`), `financial.collection_view` (F4, reserved for future collection entities).
-
-
-Accounting/administrative codes (granular, so Contabilidad does not need a high financial level):
-`expense.view_all`, `expense.invoice_manage`, `expense.payment_view`, `vendor_invoice.view`, `vendor_invoice.create`, `vendor_invoice.validate`, `client_invoice.view`, `client_invoice.manage`, `reimbursement.view`, `reimbursement.update`.
-
-Materials/Warehouse codes (future-ready, unused by Phase 2 screens):
-`material_request.create`, `material_request.submit`, `material_request.view_own`, `material_request.view_project`, `material_request.review`, `material_request.approve`, `material_request.reject`, `material_request.return`, `warehouse.request_view`, `warehouse.prepare`, `warehouse.mark_ready`, `warehouse.dispatch`, `shipment.create`, `shipment.view`, `shipment.update`, `material_receipt.create`, `material_receipt.confirm`, `material_damage.report`, `material_shortage.report`.
-
-Default role→permission mappings seeded now (each row carries its `scope`):
-- Maestro de Obra (project): `material_request.create`, `.submit`, `.view_own`, `material_receipt.confirm`, `material_damage.report`, `material_shortage.report`.
-- Residente de Obra (project): the Maestro requester/receiver set plus `material_request.view_project`.
-- Superintendente de Obra (project): `material_request.view_project`, `.review`, `.approve`, `.reject`, `.return`.
-- Director General / authorized management (organization): approval permissions, applied per organization/project policy rather than assumed.
-- Almacén (organization): `warehouse.request_view`, `warehouse.prepare`, `warehouse.mark_ready`, `warehouse.dispatch`, `shipment.create`, `shipment.view`, `shipment.update`.
-- Contabilidad (organization): the accounting/administrative codes above; no warehouse or shipment permissions.
-
-
-Financial level stays independent of these codes: a permission grants an action, the level gates money visibility.
-
-## 8b. Future Materials/Warehouse domain (NOT built in Phase 2)
-
-Recorded so the RBAC seeded now stays correct; no tables are created in this phase.
-
-Flow: Maestro/Residente draft → submit → approval by Superintendente and/or Director per configurable project policy (superintendent only, director only, either authorized approver, or superintendent then director) → warehouse queue → stock check → preparing → partially prepared or ready → shipment created → dispatched → in transit → delivered → site confirmation → received OK or received with damage/shortage → closed only when outstanding problems are resolved.
-
-Modeling rules to honor later: a request carries project, location, optional activity/concept, requester, requested date, required-by date, urgency, notes and attachments; each request item tracks requested, approved, prepared, dispatched, received, damaged, missing and backordered quantities independently — never a single generic quantity/status. A request may have multiple shipments, so tracking/guide numbers live on `material_shipments` (carrier, internal driver, vehicle, tracking number, dispatch timestamp, ETA, actual delivery, status, evidence, notes), not on the request. Receipts are recorded per item with dispatched/received/damaged/missing quantities, condition, comments and photographic evidence. Status/event history is preserved in dedicated history tables so a timeline (Requested → Approved → Preparing → Ready → Dispatched → In transit → Delivered → Received) with user and timestamp can be rendered. Notification events for requester, approver and warehouse are anticipated by the permission model but no notification logic is built.
-
-Anticipated future entities: `material_requests`, `material_request_items`, `material_request_approvals`, `material_request_status_history`, `material_shipments`, `material_shipment_items`, `shipment_status_history`, `material_receipts`, `material_receipt_items`, `material_damage_reports` (+ attachments). None created in Phase 2.
-
-Warehouse users must never automatically see contract value, unit prices sold to the client, project margin, collections or executive financial data — hence F0/F1 and no `financial.*` permissions. Production warehouse access should use individual named users with the Almacén role so preparation and dispatch actions remain attributable; a generic warehouse identity is acceptable only in development.
-
-## 9. Seed / reference data
-
-Seed only: the DFN Desarrollo e Infraestructura organization, the two business units, the approved roles (including Superintendente de Obra and Almacén as confirmed real roles) with default financial levels, the full permission catalog above, and role→permission mappings. No fake projects or financials. The org UUID is never hard-coded in the frontend; the client resolves it from the user's `organization_members` row.
-
-Seed files contain **no personal emails, names, passwords or other personal identifiers**. Identity bootstrap is a separate, reviewed, one-time script — never a reusable migration:
-
-1. Create the Auth users manually in the Supabase dashboard.
-2. Read each `auth.users` UUID from the dashboard.
-3. Run the one-time bootstrap script that inserts memberships, financial levels and the first `private.platform_admins` row **by explicit UUID**, not by email matching.
-4. The script is not committed as a schema migration and is not re-runnable as part of the reference seed.
-
-Real test identity matrix (all non-Superadmin unless stated); identities are named here for planning only and are attached in the database by UUID:
-
-
-| Identity | Organization membership (role / level) | Project membership (role / level) | Platform Superadmin |
-|---|---|---|---|
-| Diego (admin account) | NULL role / F0 (Director General + F4 may be added explicitly for business testing) | none by default | Yes |
-| Pablo Avilés | Director General / F4 (+ `portfolio.view`) | none required | No |
-| Miguel Ángel Tobón | NULL role / F0 | Superintendente de Obra / F3 on assigned projects | No |
-| Diego (second account) | NULL role / F0 | Residente de Obra / F2 on Maraluna only | No |
-| Ricardo | NULL role / F0 | Maestro de Obra / F1 on assigned project | No |
-| Cecy | Contabilidad / F2 (organization-scoped accounting codes) | none required | No |
-| Warehouse test user | Almacén / F0–F1 (organization-scoped warehouse codes) | none required | No |
-
-
-The two mandatory owner accounts remain distinct real Supabase Auth users and are never simulated with DemoRoleSwitcher once real auth is on: Account A = Diego Superadmin; Account B = Diego Residente scoped to the selected test project only.
-
-Cecy is explicitly F2: Contabilidad does not automatically imply F4. Contract, estimate and collection visibility is granted later only by explicit level/permission changes.
-
-
-
-## 10. Auth flow and mock-to-real migration
-
-Auth: `/auth` becomes real `signInWithPassword`; real `signOut` (cancel queries, clear cache, replace-navigate to `/auth`); password reset via Supabase's built-in reset email (free tier, no paid service). No sign-up UI.
-
-Staged migration, demo system stays until each stage is green:
-1. Add a real `AuthContext` (Supabase session) alongside the mock session; app still uses mock.
-2. Add server functions returning access context and authorized project list.
-3. Switch `SessionContext` internals to real data behind the same interface, so `AppShell`, `SidebarNav`, `MobileBottomNav`, `ProjectSwitcher` and role homes stay unchanged.
-4. Move protected routes under the managed `_authenticated` gate; `/auth` and `/` stay public.
-5. `ProjectSwitcher` and `/proyecto/$projectId` load only authorized projects; an unauthorized/unknown id renders "Proyecto no disponible o sin acceso" (no content leak, no distinction fishing).
-6. Once verified, remove `DemoRoleSwitcher`, demo users/projects from `src/mocks`, and the mock branches — keeping only clearly labeled demo data for still-mocked operational widgets, or removing the "Datos de demostración" notice where data is now real.
-
-## 11. Navigation readiness (no screens built)
-
-`src/config/navigation.ts` gains permission-driven, not role-name-driven, entries that stay hidden until the real access context reports the codes: project materials `/proyecto/$projectId/materiales` (shown with `material_request.view_own` or `.view_project`) and global warehouse `/almacen` (shown with `warehouse.request_view`), plus the Superadmin `administracion` group. Route files and module screens are NOT created in Phase 2; the config entries stay inert until the modules exist.
-
-Role visibility additions for the new real roles: Superintendente de Obra sees project operational destinations plus approval-oriented entries later; Almacén sees only global warehouse plus profile — no portfolio, no estimates, no financial destinations.
-
-## 12. Security test matrix
-
-Business access: Pablo (Director, org role + `portfolio.view`) reaches all org projects and reads the financial classes his explicit permissions cover; Residente reads assigned project only, 0 rows for any unrelated project; Maestro assigned project only and 0 rows from all three financial tables; Anonymous 0 rows everywhere. Plus expired membership → no access; inactive membership → no access; override deny removes a role-granted project permission; override allow grants one; unauthorized project URL renders the unavailable state; direct PostgREST query with a known UUID returns empty.
-
-Scope and membership-plane tests:
-- Scope comes from `role_permissions.scope`, not from the permission row: the same code (`financial.cost_view`) resolves at organization scope for Director General and at project scope for Residente, with no duplicated codes.
-- A project-scoped mapping on an organization role never becomes an organization-wide permission; an organization-scoped mapping is ignored on the project plane.
-- Passive organization membership (`role_id = NULL`, F0) grants nothing: no portfolio, no project, no financial rows.
-- Diego Residente: organization membership with `role_id = NULL`; only the Maraluna project membership grants access; any other DFN project returns zero rows; at F2 he reads `project_cost_financials` for Maraluna only if his project role holds `financial.cost_view` at project scope, and reads 0 rows from contract and executive tables.
-- Miguel: Superintendente permissions apply only inside explicitly assigned projects; unassigned projects return zero rows.
-- Ricardo: Maestro reaches only his assigned project.
-- Pablo: the organization Director role with organization-scoped `portfolio.view` grants portfolio access organization-wide.
-- Cecy: organization-scoped Contabilidad permissions support cross-project accounting flows; F2 accounting access exposes neither `project_contract_financials` nor `project_executive_financials`.
-- Almacén: organization-scoped warehouse permissions may expose the future cross-project warehouse queue; all three financial tables return 0 rows.
-- Project and project_location writes from the browser fail at the GRANT level (SELECT-only), for every role including Superadmin.
-- Normal users cannot grant themselves permissions, memberships or a higher financial level by any path.
-
-
-Financial-table isolation tests:
-- An F2 user with `financial.cost_view` reads allowed `project_cost_financials` rows and gets 0 rows / permission denied from contract and executive tables.
-- An F3 user does not automatically read the executive table.
-- An F4 user without the explicit `financial.margin_view` permission is denied the executive table.
-- Superadmin platform status alone returns 0 rows from all three financial tables.
-
-Role tests:
-- Cecy (Contabilidad, F2): holds the accounting permission codes; holds no warehouse or shipment permission.
-- Warehouse user (Almacén, F0/F1): holds only warehouse/shipment codes; cannot read contract value, unit prices, margin or collections; cannot approve material requests.
-- Superintendente (Miguel Ángel Tobón, F3): holds review/approve/reject/return codes; no warehouse codes; no platform administration.
-- Maestro (Ricardo, F1): requester/receiver codes only; no approval, warehouse or financial codes.
-
-
-Platform administration (run with the two real accounts):
-- Account A (Superadmin): can perform permitted administrative writes through the approved protected paths; sees the administration navigation; reads business/financial data only through its separately assigned Director General + F4 membership, except the documented audit-read policy.
-- Director non-Superadmin: F4 grants no administration; cannot change roles, permissions, memberships or financial levels.
-- Account B (Residente): `private.platform_admins` is unreadable (function/table not in the API); admin navigation hidden and admin URLs render unauthorized; cannot assign roles, modify memberships, change financial levels or view unrelated projects; direct Supabase API attempts blocked by grants/RLS.
-- Privilege escalation (all must fail): insert self into platform_admins; modify own `organization_members` row; change own role_id; raise own financial_level; change own `ends_at`/`is_active`; insert a project_members row for self; insert a permission override for self; grant self any material_request approval or warehouse permission.
-
-Grants and helper-privilege tests:
-- Signed-in user queries a policy-protected table successfully — proving `authenticated` really can execute the `private` policy helpers (USAGE + per-function EXECUTE granted).
-- The `private` helpers are NOT callable as Data API RPC (`/rest/v1/rpc/is_superadmin` fails; the schema is not exposed) and `anon` cannot execute them.
-- Privileged mutation functions are not executable by `authenticated` except `public.update_own_profile`.
-- Resident updates `phone` via `update_own_profile` successfully, and cannot change `is_active` or `employee_code` by any path (no UPDATE grant on `public.profiles`).
-- Resident's direct INSERT/UPDATE on `organization_members`, `project_members`, overrides, `roles`, `role_permissions` fails at the GRANT level, not just RLS.
-- Director F4 (non-Superadmin) cannot administer RBAC or memberships.
-- Cecy's accounting permissions return 0 rows from the contract and executive financial tables at F2; Almacén returns 0 rows from all three.
-- Superadmin platform status alone returns 0 rows from all three financial tables without a separately assigned membership and level.
-
-- If any view exists, it is `security_invoker = true` and returns caller-scoped rows.
-
-
-
-## 13. Risks and edge cases
-
-RLS recursion on membership tables (mitigated by the definer helpers); policy performance on hot paths (indexes on membership `(user_id, project_id) WHERE is_active`); trigger-created profiles failing silently for dashboard users; users with org role but no project membership; clock/timezone handling for starts_at/ends_at; accidental `anon` grants; auth user deletion orphaning history (use deactivation); seeded-but-unused permission codes drifting from the future Materials schema (mitigated by section 8b being the contract for that module); shared warehouse logins breaking attributability in production.
-
-## 14. Cost
-
-Supabase Free, current Lovable plan, GitHub Free only. No new paid services and no new frontend dependencies.
-
-## 15. Acceptance checklist
-
-- The 15 public core tables (the three split financial tables replace `project_financials`) plus `private.platform_admins` exist with PKs, FKs, uniques, checks, indexes and restrictive deletes.
-- Every public table has explicit REVOKE/GRANT statements for `anon`, `authenticated` and `service_role`, plus RLS enabled and policies; nothing relies on Supabase default privileges. `anon` holds no privilege on any DFN business table.
-- `authenticated` has **SELECT only** on every table — no client INSERT/UPDATE/DELETE anywhere, including `projects` and `project_locations`; Superadmin status grants the browser no write privileges; initial configuration runs through reviewed bootstrap/admin SQL.
-- `private` is not in the Data API exposed schemas; `authenticated` has `USAGE ON SCHEMA private` and per-function `EXECUTE` only on the named policy helpers, and RLS queries actually succeed for signed-in users.
-- Privileged mutation functions are revoked from `authenticated`; the only client-callable protected mutation is `public.update_own_profile`, restricted to first_name, last_name, phone and avatar_path for `auth.uid()`.
-- All `private` functions are `search_path = ''`, fully qualified, and SECURITY DEFINER only where RLS recursion/bypass genuinely requires it.
-- 12 business roles are seeded; every reference to 11 has been corrected; Superadmin is not a business role.
-- Phase 2 builds no administration UI (no browser flows for creating/deactivating users, changing roles, changing F0–F4, assigning projects, managing overrides or granting Superadmin); `admin.*` codes are seeded but mapped to no role; Director General F4 grants no administration. `private.is_superadmin()` takes no argument.
-- Financial data is split into `project_cost_financials` (F2 + `financial.cost_view`), `project_contract_financials` (F3 + `financial.contract_view`) and `project_executive_financials` (F4 + `financial.margin_view`), each with its own single-class SELECT policy; no policy spans classes and no column-level privileges are relied on. `target_margin` is documented as a rate (0.1250 = 12.50 %).
-- `organization_members.role_id` is nullable; a membership with NULL role and F0 grants nothing, and project-scoped employees gain no organization-wide reach.
-- Scope lives on `role_permissions.scope` (CHECK 'platform'/'organization'/'project', PK role_id+permission_id+scope) and **not** on `permissions`; the same code works at organization scope for one role and project scope for another without duplicating codes; project-scoped mappings never become organization-wide; overrides carry no scope column and affect only their project membership; project visibility distinguishes direct project membership from explicit organization-scoped portfolio permission.
-- Effective financial level follows the documented deterministic rule; no blanket `max(org, project)`.
-- `public.update_own_profile` takes no target user_id, requires an active caller profile, writes only the four self-service columns, and is executable only by `authenticated`.
-
-- Superadmin has no blanket `is_superadmin() OR ...` SELECT on business tables; audit read is the only documented global exception.
-- No views are created; any future view is `security_invoker = true`.
-- No ambiguous `private.current_org()` exists; organization_id is always explicit.
-- No BYPASSRLS database role is used from the browser; no service-role credential appears in frontend code.
-- Profile auto-created for dashboard-created auth users.
-- Real login, logout and password reset work; no sign-up UI exists.
-- Role/permission/financial-level resolution comes from the database, not from role-name checks in the client.
-- The full permission catalog is seeded, including accounting, admin and Materials/Warehouse codes, with the stated role defaults.
-- Superintendente de Obra and Almacén exist as real seeded roles; Almacén defaults to F0/F1 with no `financial.*` permissions; Contabilidad is F2.
-- Seed/migration files contain no personal emails, names or passwords; identities are attached by UUID through a separate one-time bootstrap script.
-- The seven real test identities are configured; two distinct real Supabase accounts (Superadmin and Residente) pass their matrix rows; all privilege-escalation attempts fail.
-- Every item of the security test matrix passes, including the grant/helper-privilege tests.
-- Navigation config is permission-driven and ready for `/administracion`, `/proyecto/$projectId/materiales` and `/almacen`, but none of those screens or routes are built.
-- Phase 1 shell, routes and components still render for all roles with real data.
-- Demo session/role switcher removed only after real auth is confirmed.
-- No operational or Materials/Warehouse tables created; typecheck and build clean.
-
-
-
+- [ ] `private` schema exists, not in the Data API exposed schemas, no `USAGE` to `anon`/`authenticated`.
+- [ ] `private.set_updated_at()` exists, is not SECURITY DEFINER, `search_path = ''`, EXECUTE revoked from PUBLIC/anon/authenticated.
+- [ ] `organizations`, `business_units`, `profiles` exist with the stated PK/FK/UNIQUE/CHECK/index set.
+- [ ] `business_units` has `UNIQUE (organization_id, code)` and `ON DELETE RESTRICT` to organizations.
+- [ ] `profiles.id` FKs `auth.users(id) ON DELETE CASCADE`; `first_name`/`last_name` nullable; no email/password/role/org/financial columns.
+- [ ] `profiles_set_updated_at` fires on UPDATE and changes only `updated_at`.
+- [ ] Creating a user in the Auth Dashboard with no metadata succeeds and produces exactly one profile shell.
+- [ ] RLS enabled on all three tables with zero policies.
+- [ ] `anon` and `authenticated` have no privilege on any of the three tables and cannot read a single row.
+- [ ] `service_role` has `ALL` on the three tables.
+- [ ] No seed rows, no personal data, no environment UUIDs, no DROP/CASCADE, no app code changes.
