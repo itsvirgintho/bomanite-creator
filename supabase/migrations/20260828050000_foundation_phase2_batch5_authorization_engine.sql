@@ -84,11 +84,14 @@ AS $$
 
     AND EXISTS (
       SELECT 1
+
       FROM private.platform_admins pa
+
       JOIN public.profiles pr
         ON pr.id = pa.user_id
 
       WHERE pa.user_id = (SELECT auth.uid())
+
         AND pa.admin_level = 'superadmin'
         AND pa.is_active = true
         AND pr.is_active = true
@@ -98,6 +101,12 @@ $$;
 
 -- ============================================================
 -- 3. private.is_organization_member(uuid)
+--
+-- Organization membership is valid only when:
+--   - authenticated user exists
+--   - profile is active
+--   - organization membership is active
+--   - organization itself is active
 -- ============================================================
 
 CREATE FUNCTION private.is_organization_member(
@@ -138,9 +147,10 @@ $$;
 -- ============================================================
 -- 4. private.has_org_permission(uuid, text)
 --
--- IMPORTANT:
--- organization_id is explicit to prevent permissions from one
--- organization leaking into another organization.
+-- organization_id is explicit so authority from one organization
+-- can never leak into another organization.
+--
+-- Only organization-scoped role mappings are considered.
 -- ============================================================
 
 CREATE FUNCTION private.has_org_permission(
@@ -198,6 +208,16 @@ $$;
 
 -- ============================================================
 -- 5. private.is_project_member(uuid)
+--
+-- A project membership is valid only when every part of the
+-- authority chain remains active:
+--
+--   profile
+--   organization
+--   organization membership
+--   project
+--   project membership
+--   project role
 -- ============================================================
 
 CREATE FUNCTION private.is_project_member(
@@ -223,12 +243,18 @@ AS $$
         ON proj.id = pm.project_id
        AND proj.organization_id = pm.organization_id
 
+      JOIN public.organizations org
+        ON org.id = proj.organization_id
+
       JOIN public.organization_members om
         ON om.organization_id = pm.organization_id
        AND om.user_id = pm.user_id
 
       JOIN public.profiles pr
         ON pr.id = pm.user_id
+
+      JOIN public.roles r
+        ON r.id = pm.role_id
 
       WHERE pm.project_id = p_project_id
         AND pm.user_id = (SELECT auth.uid())
@@ -237,6 +263,8 @@ AS $$
         AND om.is_active = true
         AND pr.is_active = true
         AND proj.is_active = true
+        AND org.is_active = true
+        AND r.is_active = true
     );
 $$;
 
@@ -251,6 +279,9 @@ $$;
 -- no override    -> project-role mapping
 --
 -- Organization-scoped permissions are intentionally ignored.
+--
+-- A disabled project role invalidates both the role mapping and
+-- any project-level override.
 -- ============================================================
 
 CREATE FUNCTION private.has_project_permission(
@@ -274,12 +305,18 @@ AS $$
       ON proj.id = pm.project_id
      AND proj.organization_id = pm.organization_id
 
+    JOIN public.organizations org
+      ON org.id = proj.organization_id
+
     JOIN public.organization_members om
       ON om.organization_id = pm.organization_id
      AND om.user_id = pm.user_id
 
     JOIN public.profiles pr
       ON pr.id = pm.user_id
+
+    JOIN public.roles r
+      ON r.id = pm.role_id
 
     WHERE pm.project_id = p_project_id
       AND pm.user_id = (SELECT auth.uid())
@@ -288,6 +325,8 @@ AS $$
       AND om.is_active = true
       AND pr.is_active = true
       AND proj.is_active = true
+      AND org.is_active = true
+      AND r.is_active = true
 
     LIMIT 1
   ),
@@ -460,8 +499,12 @@ AS $$
 
     FROM public.projects proj
 
+    JOIN public.organizations org
+      ON org.id = proj.organization_id
+
     WHERE proj.id = p_project_id
       AND proj.is_active = true
+      AND org.is_active = true
 
     LIMIT 1
   ),
@@ -483,10 +526,15 @@ AS $$
     JOIN public.profiles pr
       ON pr.id = pm.user_id
 
+    JOIN public.roles r
+      ON r.id = pm.role_id
+
     WHERE pm.user_id = (SELECT auth.uid())
+
       AND pm.is_active = true
       AND om.is_active = true
       AND pr.is_active = true
+      AND r.is_active = true
 
     LIMIT 1
   ),
@@ -527,6 +575,7 @@ AS $$
           AND rp.scope = 'organization'
 
           AND perm.is_active = true
+
           AND perm.code IN (
             'financial.cost_view',
             'financial.contract_view',
@@ -594,8 +643,12 @@ AS $$
 
     FROM public.projects proj
 
+    JOIN public.organizations org
+      ON org.id = proj.organization_id
+
     WHERE proj.id = p_project_id
       AND proj.is_active = true
+      AND org.is_active = true
 
     LIMIT 1
   ),
@@ -722,9 +775,15 @@ $$;
 -- exact authorization helpers so future RLS policies can call
 -- them.
 --
--- No table privileges are granted.
+-- service_role receives schema USAGE so its explicit privileges
+-- on private.platform_admins are usable.
+--
+-- No table privileges are granted to authenticated.
 -- anon receives nothing.
 -- ============================================================
+
+GRANT USAGE ON SCHEMA private
+  TO service_role;
 
 GRANT USAGE ON SCHEMA private
   TO authenticated;
@@ -815,7 +874,9 @@ BEGIN
   -- Superadmin must never be represented as a business role.
   IF EXISTS (
     SELECT 1
+
     FROM public.roles
+
     WHERE code IN (
       'SUPERADMIN',
       'SUPER_ADMIN',
