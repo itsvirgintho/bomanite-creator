@@ -107,9 +107,10 @@ Dependency graph (avoids recursion): policies on business tables call `private.*
 7. project_members, overrides.
 8. project_locations (+ cycle trigger).
 9. audit_logs + audit write function/triggers.
-10. private helper functions.
-11. GRANTs + RLS policies for all of the above.
-12. Seed reference data.
+10. `private.platform_admins`.
+11. private helper functions (including `is_superadmin`).
+12. GRANTs + RLS policies for all of the above, including the Superadmin administrative policies.
+13. Seed reference data.
 
 Each step is a separate migration presented for approval.
 
@@ -117,7 +118,14 @@ Each step is a separate migration presented for approval.
 
 Seed only: the DFN Desarrollo e Infraestructura organization, the two business units, the 11 roles with default financial levels, the full permission catalog, and role→permission mappings. No fake projects or financials. The org UUID is never hard-coded in the frontend; the client resolves it from the user's `organization_members` row.
 
-Initial users: created manually in the Supabase dashboard (Director, Residente, Maestro, Contabilidad test accounts) — no privileged admin-user code in this phase. Their memberships are attached by a small, reviewed SQL statement referencing emails, not by the app.
+Initial users: created manually in the Supabase dashboard — no privileged admin-user code in this phase. Memberships and the first `platform_admins` row are attached by a small, reviewed SQL statement referencing emails, not by the app.
+
+Two real owner accounts (mandatory for Phase 2 testing, never simulated with DemoRoleSwitcher once real auth is on):
+- **Account A — Superadmin**: active row in `private.platform_admins` (`superadmin`), plus an explicitly assigned Director General organization membership at F4 for business testing.
+- **Account B — Residente**: no platform-admin row, membership only in the selected test project with the Residente de Obra role and an explicitly configured financial level (F2 or F3), no access to administration or unrelated projects.
+
+Optional additional test identities: Maestro and Contabilidad, configured the same way.
+
 
 ## 9. Auth flow and mock-to-real migration
 
