@@ -5,12 +5,12 @@ Core backend + real authorization. Replaces the mocked identity/project foundati
 ## 1. Architecture
 
 - Identity: Supabase Auth (email/password only, no public sign-up). `profiles` mirrors `auth.users` 1:1.
-- Authorization resolved in the database, never in the UI. Frontend reads an "access context" (profile + org membership + project memberships + effective permissions + financial level) exposed through server functions and RLS-protected views.
+- Authorization resolved in the database, never in the UI. Frontend reads an "access context" (profile + org membership + project memberships + effective permissions + financial level) exposed through server functions. No views are created in Phase 2; if one is ever added it must be `WITH (security_invoker = true)`.
 - Two membership planes: organization-level (Director, Contabilidad, Administración) and project-level (Residente, Supervisor, Maestro, etc.). Project role wins inside a project; org role provides global reach.
 - Permissions are a catalog + role mappings + per-project-member overrides. No role-name string checks in code; the client uses permission codes only for UI visibility.
-- All privileged helper logic lives in a non-exposed `private` schema, `SECURITY DEFINER`, `set search_path = ''`, fully qualified names, `REVOKE EXECUTE FROM anon, authenticated` where possible (policies run as definer-owner and can still call them).
-- Sensitive money lives only in `project_financials`, gated separately from `projects`.
-- **Platform administration is a third, independent plane** (`private.platform_admins`), unrelated to business role and financial level. See section 2b.
+- Helper logic lives in a non-exposed `private` schema (never added to the Data API exposed schemas), `SECURITY DEFINER` only where RLS recursion/bypass is genuinely required, `set search_path = ''`, every relation and function fully qualified. Privileges are least-privilege **per function** — see section 6.
+- Sensitive money lives only in `project_financials`, gated by financial level **and** an explicit financial permission.
+- **Platform administration is a third, independent plane** (`private.platform_admins`), unrelated to business role and financial level. In Phase 2 all sensitive administrative writes are Superadmin-only. See section 2b.
 
 ### 2b. Platform Superadmin layer
 
