@@ -24,9 +24,9 @@ interface ProjectSwitcherProps {
  */
 export function ProjectSwitcher({ tone = "dark", className }: ProjectSwitcherProps) {
   const { activeProject, selectableProjects } = useProjectContext();
-  const { role } = useSession();
+  const { demoRole } = useSession();
   const navigate = useNavigate();
-  const canWorkGlobally = GLOBAL_ROLES.includes(role);
+  const canWorkGlobally = GLOBAL_ROLES.includes(demoRole);
   const singleProject = selectableProjects.length <= 1 && !canWorkGlobally;
 
   const label = activeProject ? activeProject.name : canWorkGlobally ? "Todos los proyectos" : "Sin proyecto";
@@ -89,7 +89,7 @@ export function ProjectSwitcher({ tone = "dark", className }: ProjectSwitcherPro
         {canWorkGlobally ? (
           <>
             <DropdownMenuSeparator />
-            {role === "contabilidad" ? (
+            {demoRole === "contabilidad" ? (
               <DropdownMenuItem onSelect={() => void navigate({ to: "/contabilidad" })}>
                 Vista global de contabilidad
               </DropdownMenuItem>
