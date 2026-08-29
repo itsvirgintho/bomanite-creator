@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { LoadingState } from "@/components/common/States";
+import { SplashScreen } from "@/components/common/SplashScreen";
 import { useAuth } from "@/contexts/auth-context";
 
 export const Route = createFileRoute("/")({
@@ -23,9 +23,5 @@ function Index() {
     void navigate({ to: session ? "/portafolio" : "/auth", replace: true });
   }, [initializing, session, navigate]);
 
-  return (
-    <div className="mx-auto max-w-3xl p-6">
-      <LoadingState rows={2} />
-    </div>
-  );
+  return <SplashScreen />;
 }
