@@ -13,18 +13,24 @@ const EMPHASIS: Record<NonNullable<MetricValue["emphasis"]>, string> = {
 interface MetricTileProps {
   metric: MetricValue;
   params?: Record<string, string> | undefined;
+  featured?: boolean | undefined;
 }
 
 /**
  * Toda métrica importante debe poder llevar a su origen (drilldownTo).
  * En esta fase el destino puede ser un módulo en preparación.
+ * La primera métrica del grid se presenta como tile destacada (bento).
  */
-export function MetricTile({ metric, params }: MetricTileProps) {
+export function MetricTile({ metric, params, featured = false }: MetricTileProps) {
   const body = (
     <>
       <span className="overline">{metric.label}</span>
       <span
-        className={cn("tabular mt-2 block text-2xl font-semibold", EMPHASIS[metric.emphasis ?? "neutral"])}
+        className={cn(
+          "tabular mt-2 block font-display font-semibold",
+          featured ? "text-4xl" : "text-2xl",
+          EMPHASIS[metric.emphasis ?? "neutral"],
+        )}
       >
         {metric.value}
       </span>
@@ -32,12 +38,21 @@ export function MetricTile({ metric, params }: MetricTileProps) {
     </>
   );
 
+  const tileClass = cn(
+    "panel group relative p-4",
+    featured && "panel-ember flex flex-col justify-end p-5",
+  );
+
   if (metric.drilldownTo) {
     return (
       <AppLink
         to={metric.drilldownTo}
         params={params}
-        className="panel group relative block p-4 transition-colors hover:border-border-strong"
+        className={cn(
+          tileClass,
+          "block transition-all hover:border-border-strong",
+          featured && "hover:shadow-raised",
+        )}
       >
         {body}
         <ChevronRight
@@ -48,7 +63,7 @@ export function MetricTile({ metric, params }: MetricTileProps) {
     );
   }
 
-  return <div className="panel p-4">{body}</div>;
+  return <div className={tileClass}>{body}</div>;
 }
 
 export function MetricGrid({
@@ -61,9 +76,14 @@ export function MetricGrid({
   className?: string | undefined;
 }) {
   return (
-    <div className={cn("grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6", className)}>
-      {metrics.map((metric) => (
-        <MetricTile key={metric.id} metric={metric} params={params} />
+    <div className={cn("grid grid-cols-2 gap-3 lg:grid-cols-4", className)}>
+      {metrics.map((metric, index) => (
+        <div
+          key={metric.id}
+          className={cn(index === 0 && "col-span-2 row-span-2")}
+        >
+          <MetricTile metric={metric} params={params} featured={index === 0} />
+        </div>
       ))}
     </div>
   );
