@@ -21,7 +21,9 @@ function ProjectHome() {
 
   if (!activeProject) return null;
 
-  const demoProject = getDemoProject(activeProject.id) ?? getDemoProject("maraluna");
+  // Solo se muestra contenido de demostración si coincide EXACTAMENTE con el id
+  // del proyecto real activo. Nunca se sustituye por otro proyecto.
+  const demoProject = getDemoProject(activeProject.id);
   if (!demoProject) {
     return (
       <EmptyState
