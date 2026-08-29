@@ -61,8 +61,12 @@ export function SidebarNav() {
                       to={item.to}
                       params={params}
                       activeOptions={{ exact: item.to === "/proyecto/$projectId" }}
-                      className="flex items-center gap-2.5 rounded-md px-2 py-2 text-sm text-sidebar-foreground/85 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[status=active]:bg-sidebar-accent data-[status=active]:font-medium data-[status=active]:text-sidebar-accent-foreground"
+                      className="relative flex items-center gap-2.5 rounded-md px-2 py-2 pl-3.5 text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[status=active]:bg-sidebar-accent data-[status=active]:font-medium data-[status=active]:text-sidebar-accent-foreground"
                     >
+                      <span
+                        aria-hidden
+                        className="absolute top-1/2 left-1 h-4 w-0.5 -translate-y-1/2 rounded-full bg-primary opacity-0 transition-opacity [[data-status=active]>&]:opacity-100"
+                      />
                       <item.icon aria-hidden className="h-4 w-4 shrink-0" />
                       {item.label}
                     </AppLink>

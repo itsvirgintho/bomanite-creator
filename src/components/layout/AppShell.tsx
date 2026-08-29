@@ -3,7 +3,7 @@ import { UserRound } from "lucide-react";
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { Brand } from "@/components/common/Brand";
-import { LoadingState } from "@/components/common/States";
+import { SplashScreen } from "@/components/common/SplashScreen";
 import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import { ProjectSwitcher } from "@/components/layout/ProjectSwitcher";
 import { SidebarNav } from "@/components/layout/SidebarNav";
@@ -36,11 +36,7 @@ export function AppShell({ children, contextLabel }: AppShellProps) {
   }, [initializing, session, navigate]);
 
   if (initializing || !session || (loadingContext && !authorizationContext)) {
-    return (
-      <div className="mx-auto max-w-3xl p-6">
-        <LoadingState rows={2} />
-      </div>
-    );
+    return <SplashScreen />;
   }
 
   if (!authorizationContext) {
