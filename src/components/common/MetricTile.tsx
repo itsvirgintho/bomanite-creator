@@ -78,11 +78,10 @@ export function MetricGrid({
   return (
     <div className={cn("grid grid-cols-2 gap-3 lg:grid-cols-4", className)}>
       {metrics.map((metric, index) => (
-        <div
-          key={metric.id}
-          className={cn(index === 0 && "col-span-2 row-span-2")}
-        >
-          <MetricTile metric={metric} params={params} featured={index === 0} />
+        <div key={metric.id} className={cn(index === 0 && "col-span-2 row-span-2")}>
+          <div className="h-full [&>*]:h-full">
+            <MetricTile metric={metric} params={params} featured={index === 0} />
+          </div>
         </div>
       ))}
     </div>

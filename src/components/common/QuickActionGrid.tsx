@@ -18,9 +18,9 @@ export function QuickActionGrid({ actions }: { actions: QuickAction[] }) {
           key={action.id}
           to={action.to}
           params={action.params}
-          className="flex min-h-24 flex-col items-start justify-between rounded-lg border border-border-strong bg-card p-4 shadow-panel active:bg-muted"
+          className="flex min-h-24 flex-col items-start justify-between rounded-lg border border-border-strong bg-card p-4 shadow-panel transition-colors hover:border-primary/50 active:bg-muted"
         >
-          <action.icon aria-hidden className="h-6 w-6 text-accent-foreground" />
+          <action.icon aria-hidden className="h-6 w-6 text-primary" />
           <span className="text-base font-semibold">{action.label}</span>
         </AppLink>
       ))}
