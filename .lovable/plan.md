@@ -1,64 +1,44 @@
-# Foundation Phase 2 — Batch 1: Create versioned Supabase migration file
+# DFN Control — Rediseño Visual (solo presentación, sin cambios funcionales)
 
-## Objective
-Create exactly one timestamped Supabase migration file in the repository containing the approved Batch 1 SQL, with no semantic changes and no remote database execution.
+## Objetivo
+Impacto visual fuerte sin tocar lógica de negocio, autenticación, RLS, rutas ni datos. Todo el cambio vive en tokens CSS, componentes de presentación y un splash de carga.
 
-## File to create
-`supabase/migrations/<timestamp>_foundation_phase2_batch1_core.sql`
+## Decisiones fijadas por el usuario
+- **Paleta**: Charcoal & Ember — base carbón oscuro `#1a1a1a` / `#2d2d2d` / `#4a4a4a`, acento ember `#e85d3a`.
+- **Tipografía**: Urbanist (titulares) + Epilogue (cuerpo), cargadas vía `<link>` en `__root.tsx` (nunca `@import` de URL en styles.css).
+- **Layout**: Bento grid para paneles/home (tarjetas de tamaños mixtos, densidad controlada).
+- **Sesión**: recordar siempre — Supabase ya persiste sesión en localStorage por defecto; se verifica la config y se elimina cualquier cierre de sesión forzado al recargar. Sin casilla "Recordarme".
 
-where `<timestamp>` is the current UTC timestamp in Supabase migration format `YYYYMMDDHHMMSS`.
+## Alcance de cambios
 
-## Directory to create (if absent)
-`supabase/migrations/`
+### 1. Sistema de diseño (`src/styles.css`)
+- Reemplazar tokens `:root` por tema carbón oscuro: background carbón, cards grafito, acento ember, estados (success/warning/danger/info) recalibrados para dark mode con buen contraste.
+- Mantener nombres semánticos existentes (`--background`, `--primary`, `--accent`, etc.) para no tocar componentes; color nunca como único indicador de estado (se conservan íconos/etiquetas).
+- Sombras y bordes ajustados a superficies oscuras.
+- Tokens `--font-display: Urbanist`, `--font-sans: Epilogue`.
 
-## Contents
-The file will contain the approved Batch 1 SQL exactly as frozen in the previous plan, including:
+### 2. Splash de carga con logo
+- Componente `SplashScreen`: logo tipográfico "DFN CONTROL" (wordmark Arial simple/limpio, según descripción del usuario — se renderiza como texto, no imagen) con animación sutil de entrada, sobre fondo carbón.
+- Mostrarse mientras `initializing` del auth context (reemplaza el `LoadingState` genérico de `AppShell` e `index.tsx`). Transición suave al shell al resolver la sesión.
+- Marca actualizada en `Brand.tsx` manteniendo el punto único de definición.
 
-- `CREATE SCHEMA private;` and privilege revocation on it.
-- `CREATE FUNCTION private.set_updated_at();` (non-security definer, `search_path=''`).
-- Tables:
-  - `public.organizations`
-  - `public.business_units`
-  - `public.profiles`
-- FKs:
-  - `business_units.organization_id → organizations.id ON DELETE RESTRICT`
-  - `profiles.id → auth.users.id ON DELETE CASCADE`
-- Triggers:
-  - `profiles_set_updated_at` on `public.profiles`
-  - `on_auth_user_created` on `auth.users`
-- Function `private.handle_new_auth_user()` (security definer, `search_path=''`).
-- Indexes:
-  - PK indexes (created automatically by PK constraints)
-  - `business_units_org_code_key` via `UNIQUE (organization_id, code)`
-  - partial unique index `profiles_employee_code_key` where `employee_code IS NOT NULL`
-- Security lockdown:
-  - RLS enabled immediately on all three tables
-  - Zero policies
-  - No table privileges for `anon`, `authenticated`, or `PUBLIC`
-  - No `USAGE` on schema `private` for `anon`/`authenticated`
-  - No `EXECUTE` on `private.set_updated_at()` or `private.handle_new_auth_user()` for `PUBLIC`/`anon`/`authenticated`
-  - `service_role` granted `ALL` on the three tables
+### 3. Pantalla de login (`/auth`)
+- Rediseño: fondo carbón, wordmark DFN CONTROL prominente, tarjeta de formulario con acento ember, focos visibles. Misma funcionalidad (email/password, reset).
 
-## What will NOT be in the file
-- `BEGIN` / `COMMIT`
-- `IF NOT EXISTS`
-- `CREATE OR REPLACE`
-- Seed data, users, roles, permissions, projects, financial tables, locations, audit, Superadmin helpers, additional indexes/policies
-- Pipeline-incompatible statements (`CREATE INDEX CONCURRENTLY`, `REINDEX`, `VACUUM`, `ALTER SYSTEM`, `CLUSTER`)
+### 4. Shell y navegación
+- Sidebar oscura refinada: item activo con indicador ember, jerarquía tipográfica Urbanist.
+- Header/contexto, `MobileBottomNav`, `ProjectSwitcher` restilizados con tokens nuevos.
 
-## What will NOT happen
-- No `supabase db push`
-- No `supabase db reset --linked`
-- No remote migration tool
-- No SQL execution against the Supabase project
-- No modification to `supabase/config.toml` unless a migration-directory config change is strictly required
-- No other repository files changed
-- No Auth users or seed rows created
+### 5. Bento grid en vistas principales
+- `MaestroHome`, `ResidentHome`, `DirectorProjectHome`, `AttentionPanel`, `MetricTile`: reorganizar en bento (tile destacada + tiles secundarias) usando solo reordenación de layout/clases; sin cambiar datos ni queries.
 
-## Deliverables after creation
-- Exact migration filename
-- Confirmation that contents are byte-equivalent in SQL semantics to the approved Batch 1
-- Confirmation that `supabase/config.toml` is unchanged
-- Confirmation that no other repository files were changed
-- Confirmation that no database calls were made
-- Confirmation that no migration was recorded remotely
+### 6. Persistencia de sesión
+- Verificar `src/integrations/supabase/client.ts`: `persistSession: true`, `autoRefreshToken: true`. Confirmar que recargar o cerrar/abrir el navegador mantiene la sesión y que `/` redirige a `/portafolio` sin login repetido.
+
+## Fuera de alcance
+- Base de datos, RLS, migraciones, RPC, lógica de autorización, rutas nuevas, datos mock.
+- No se eliminan funcionalidades; solo presentación.
+
+## Verificación
+- Typecheck + build OK.
+- Playwright: splash visible al cargar, login rediseñado, shell dark, bento en homes, sesión persistente tras recarga, móvil (bottom nav) intacto.
